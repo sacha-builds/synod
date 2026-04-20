@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Synth } from './audio/Synth'
 import { defaultPatch } from './audio/types'
-import { cloneSynthPatch, restoreSynthPatch } from './audio/randomize'
+import { cloneSynthPatch, restorePart, restoreSynthPatch } from './audio/randomize'
 import {
   generatePresetId,
   loadLastPresetId,
@@ -95,6 +95,31 @@ const currentPart = computed(() => patch.parts[patch.activePart])
 function loadPreset(id: string): void {
   const preset = allPresets.value.find((p) => p.id === id)
   if (!preset) return
+
+  const presetIsDual = preset.patch.bimode !== 'single'
+  const currentlyBitimbral = patch.bimode !== 'single'
+
+  if (currentlyBitimbral && !presetIsDual) {
+    // Layered or split performance + a single-timbre preset → load the
+    // preset's sound into the active part only. Keep bimode, split note,
+    // the other part, FX, arp, master — the user's performance survives.
+    suppressDirty = true
+    const idx = patch.activePart
+    synth.value?.parts[idx].releaseAll()
+    restorePart(patch.parts[idx], preset.patch.parts[0])
+    synth.value?.syncPartPatches()
+    setTimeout(() => {
+      suppressDirty = false
+    }, 50)
+    // The overall patch is now a hybrid, so mark dirty and clear the
+    // "current preset" pointer — saving would need a new name.
+    currentPresetId.value = null
+    isDirty.value = true
+    saveLastPresetId(null)
+    return
+  }
+
+  // Single mode, or the preset itself is a full dual performance.
   applyPatch(preset.patch)
   currentPresetId.value = preset.id
   isDirty.value = false
