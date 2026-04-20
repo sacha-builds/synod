@@ -54,7 +54,7 @@ function setFromNorm(n: number) {
   emit('update:modelValue', v)
 }
 
-const { onPointerDown } = useDrag((deltaY) => {
+const { onPointerDown, isDragging } = useDrag((deltaY) => {
   const sensitivity = 1 / 200 // 200px = full range
   setFromNorm(norm.value + deltaY * sensitivity)
 })
@@ -123,7 +123,7 @@ const displayValue = computed(() => {
       </svg>
     </div>
     <div class="readout">
-      <span v-if="!hovering && label" class="label">{{ label }}</span>
+      <span v-if="!hovering && !isDragging && label" class="label">{{ label }}</span>
       <span v-else class="value-text">{{ displayValue }}{{ unit }}</span>
     </div>
   </div>

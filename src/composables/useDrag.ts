@@ -1,4 +1,4 @@
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 
 /**
  * Pointer-drag helper. Attaches move/up listeners to the window only while a
@@ -10,12 +10,12 @@ import { onBeforeUnmount } from 'vue'
  * avoid that pattern entirely.
  */
 export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd?: () => void) {
+  const isDragging = ref(false)
   let startY = 0
   let totalY = 0
-  let dragging = false
 
   function onWindowMove(e: PointerEvent) {
-    if (!dragging) return
+    if (!isDragging.value) return
     // If the user released the button outside the window, we may never get a
     // pointerup. Every move event, check that buttons are still held; if not,
     // treat as release. This is the most reliable cross-browser safeguard.
@@ -30,8 +30,8 @@ export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd
   }
 
   function onWindowUp() {
-    if (!dragging) return
-    dragging = false
+    if (!isDragging.value) return
+    isDragging.value = false
     document.body.style.cursor = ''
     window.removeEventListener('pointermove', onWindowMove)
     window.removeEventListener('pointerup', onWindowUp)
@@ -44,7 +44,7 @@ export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd
     if (e.button !== 0) return
     startY = e.clientY
     totalY = 0
-    dragging = true
+    isDragging.value = true
     document.body.style.cursor = 'ns-resize'
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
@@ -61,5 +61,5 @@ export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd
     window.removeEventListener('blur', onWindowUp)
   })
 
-  return { onPointerDown }
+  return { onPointerDown, isDragging }
 }
