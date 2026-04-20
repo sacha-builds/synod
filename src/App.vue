@@ -27,6 +27,7 @@ import RandomizePanel from './components/RandomizePanel.vue'
 import FXPanel from './components/FXPanel.vue'
 import ArpPanel from './components/ArpPanel.vue'
 import PresetBar from './components/PresetBar.vue'
+import PerformanceBar from './components/PerformanceBar.vue'
 import { Arp } from './audio/Arp'
 import { useMidi } from './composables/useMidi'
 
@@ -550,6 +551,8 @@ onBeforeUnmount(() => {
       @export-preset="exportPreset"
       @import-preset="importPreset"
     />
+
+    <PerformanceBar :patch="patch" />
 
     <transition name="hint">
       <div v-if="showSoundHint" class="sound-hint" role="status">
