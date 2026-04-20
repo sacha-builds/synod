@@ -24,8 +24,11 @@ const fmtTime = (v: number) => {
 </script>
 
 <template>
-  <div class="panel voice-panel">
-    <h3 class="panel-title">Voice</h3>
+  <details class="panel voice-panel" open>
+    <summary class="panel-title">
+      <span class="chevron">▾</span>
+      Voice
+    </summary>
 
     <div class="mode-row">
       <button
@@ -67,7 +70,7 @@ const fmtTime = (v: number) => {
         </label>
       </div>
     </transition>
-  </div>
+  </details>
 </template>
 
 <style scoped>

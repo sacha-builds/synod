@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Synth } from './audio/Synth'
 import { defaultPatch } from './audio/types'
 import OscillatorPanel from './components/OscillatorPanel.vue'
@@ -111,6 +111,38 @@ onMounted(() => {
     if (document.hidden) releaseAll()
   })
 })
+
+// --- Scroll-fade indicator for the module area ---
+const layoutRef = ref<HTMLElement | null>(null)
+const canScrollUp = ref(false)
+const canScrollDown = ref(false)
+
+function updateScroll() {
+  const el = layoutRef.value
+  if (!el) {
+    canScrollUp.value = false
+    canScrollDown.value = false
+    return
+  }
+  canScrollUp.value = el.scrollTop > 2
+  canScrollDown.value = el.scrollTop + el.clientHeight < el.scrollHeight - 2
+}
+
+let ro: ResizeObserver | null = null
+let mo: MutationObserver | null = null
+onMounted(() => {
+  const el = layoutRef.value
+  if (!el) return
+  updateScroll()
+  ro = new ResizeObserver(updateScroll)
+  ro.observe(el)
+  mo = new MutationObserver(updateScroll)
+  mo.observe(el, { childList: true, subtree: true, attributes: true })
+})
+onBeforeUnmount(() => {
+  ro?.disconnect()
+  mo?.disconnect()
+})
 </script>
 
 <template>
@@ -156,36 +188,41 @@ onMounted(() => {
       </div>
     </header>
 
-    <main class="layout">
-      <section class="oscillators panel">
-        <h3 class="panel-title">Oscillators</h3>
-        <div class="osc-grid">
-          <OscillatorPanel :index="0" :osc="patch.oscillators[0]" />
-          <OscillatorPanel :index="1" :osc="patch.oscillators[1]" />
-          <OscillatorPanel :index="2" :osc="patch.oscillators[2]" />
-        </div>
-      </section>
+    <div class="layout-wrap" :class="{ 'fade-up': canScrollUp, 'fade-down': canScrollDown }">
+      <main class="layout" ref="layoutRef" @scroll="updateScroll">
+        <details class="oscillators panel" open>
+          <summary class="panel-title">
+            <span class="chevron">▾</span>
+            Oscillators
+          </summary>
+          <div class="osc-grid">
+            <OscillatorPanel :index="0" :osc="patch.oscillators[0]" />
+            <OscillatorPanel :index="1" :osc="patch.oscillators[1]" />
+            <OscillatorPanel :index="2" :osc="patch.oscillators[2]" />
+          </div>
+        </details>
 
-      <section class="scope-section">
-        <Oscilloscope :analyser="synth?.analyser ?? null" />
-      </section>
+        <section class="scope-section">
+          <Oscilloscope :analyser="synth?.analyser ?? null" />
+        </section>
 
-      <section class="ampenv-section">
-        <EnvelopePanel title="Amp Envelope" :env="patch.ampEnvelope" />
-      </section>
+        <section class="ampenv-section">
+          <EnvelopePanel title="Amp Envelope" :env="patch.ampEnvelope" />
+        </section>
 
-      <section class="filtenv-section">
-        <EnvelopePanel title="Filter Envelope" :env="patch.filterEnvelope" />
-      </section>
+        <section class="filtenv-section">
+          <EnvelopePanel title="Filter Envelope" :env="patch.filterEnvelope" />
+        </section>
 
-      <section class="filter-section">
-        <FilterPanel :filter="patch.filter" />
-      </section>
+        <section class="filter-section">
+          <FilterPanel :filter="patch.filter" />
+        </section>
 
-      <section class="voice-section">
-        <VoicePanel :patch="patch" />
-      </section>
-    </main>
+        <section class="voice-section">
+          <VoicePanel :patch="patch" />
+        </section>
+      </main>
+    </div>
 
     <footer class="kbd-footer">
       <KeyboardInput :active-notes="activeNotes" @note-on="startNote" @note-off="stopNote" />
@@ -303,9 +340,40 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
 }
-.layout {
+.layout-wrap {
+  position: relative;
   flex: 1;
   min-height: 0;
+}
+.layout-wrap::before,
+.layout-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22px;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 180ms var(--ease-out);
+}
+.layout-wrap::before {
+  top: 0;
+  background: linear-gradient(180deg, var(--bg-0) 0%, transparent 100%);
+}
+.layout-wrap::after {
+  bottom: 0;
+  background: linear-gradient(0deg, var(--bg-0) 0%, transparent 100%);
+}
+.layout-wrap.fade-up::before {
+  opacity: 1;
+}
+.layout-wrap.fade-down::after {
+  opacity: 1;
+}
+
+.layout {
+  height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   display: grid;
@@ -319,6 +387,18 @@ onMounted(() => {
     'filtenv'
     'filter'
     'voice';
+}
+/* Mobile: oscilloscope first so users see motion/feedback before the controls */
+@media (max-width: 899px) {
+  .layout {
+    grid-template-areas:
+      'scope'
+      'osc'
+      'ampenv'
+      'filtenv'
+      'filter'
+      'voice';
+  }
 }
 @media (min-width: 900px) {
   .layout {

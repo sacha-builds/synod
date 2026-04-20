@@ -30,8 +30,11 @@ const fmtTime = (v: number) => {
 </script>
 
 <template>
-  <div class="panel env-panel">
-    <h3 class="panel-title">{{ title }}</h3>
+  <details class="panel env-panel" open>
+    <summary class="panel-title">
+      <span class="chevron">▾</span>
+      {{ title }}
+    </summary>
     <div class="graph">
       <svg viewBox="0 0 200 40" preserveAspectRatio="none" width="100%" height="40">
         <path :d="envPath" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
@@ -49,7 +52,7 @@ const fmtTime = (v: number) => {
       <Knob v-model="env.sustain" :min="0" :max="1" label="SUSTAIN" :format="(v) => (v * 100).toFixed(0) + '%'" />
       <Knob v-model="env.release" :min="0.001" :max="20" curve="exp" label="RELEASE" :format="fmtTime" />
     </div>
-  </div>
+  </details>
 </template>
 
 <style scoped>

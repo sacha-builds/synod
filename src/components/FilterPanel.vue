@@ -18,8 +18,11 @@ const types: { id: FilterType; label: string; path: string }[] = [
 </script>
 
 <template>
-  <div class="panel">
-    <h3 class="panel-title">Filter</h3>
+  <details class="panel" open>
+    <summary class="panel-title">
+      <span class="chevron">▾</span>
+      Filter
+    </summary>
     <div class="type-row">
       <button
         v-for="t in types"
@@ -40,7 +43,7 @@ const types: { id: FilterType; label: string; path: string }[] = [
       <Knob v-model="filter.resonance" :min="0.1" :max="20" curve="exp" label="RES" :format="(v) => v.toFixed(1)" />
       <Knob v-model="filter.envAmount" :min="0" :max="10000" curve="exp" label="ENV AMT" :format="fmtHz" />
     </div>
-  </div>
+  </details>
 </template>
 
 <style scoped>
