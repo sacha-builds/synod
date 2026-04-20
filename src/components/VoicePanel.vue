@@ -42,13 +42,12 @@ const fmtTime = (v: number) => {
     </div>
 
     <transition name="slide">
-      <div v-if="patch.voiceMode === 'mono'" class="mono-controls">
-        <div class="knob-row">
+      <div v-if="patch.voiceMode === 'mono'" class="mono-row">
+        <div class="glide-cell">
           <Knob v-model="patch.glide" :min="0" :max="2" curve="exp" label="GLIDE" :format="fmtTime" />
         </div>
-
-        <div class="prio-group">
-          <div class="prio-label">PRIORITY</div>
+        <div class="prio-cell">
+          <div class="sub-label">PRIORITY</div>
           <div class="prio-row">
             <button
               v-for="p in priorities"
@@ -62,7 +61,6 @@ const fmtTime = (v: number) => {
             </button>
           </div>
         </div>
-
         <label class="legato" :title="'Hold a new note while another is held — envelope stays open'">
           <input type="checkbox" v-model="patch.legato" />
           <span>LEGATO</span>
@@ -100,28 +98,29 @@ const fmtTime = (v: number) => {
   opacity: 0.35;
   cursor: not-allowed;
 }
-.mono-controls {
+.mono-row {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 8px;
+  align-items: center;
+  gap: 18px;
+  padding-top: 10px;
+  margin-top: 4px;
   border-top: 1px solid var(--line);
 }
-.knob-row {
-  display: flex;
-  justify-content: center;
+.glide-cell {
+  flex: 0 0 auto;
 }
-.prio-group {
+.prio-cell {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 5px;
+  min-width: 140px;
 }
-.prio-label {
+.sub-label {
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.12em;
   color: var(--text-faint);
-  text-align: center;
 }
 .prio-row {
   display: flex;
@@ -129,7 +128,7 @@ const fmtTime = (v: number) => {
 }
 .prio {
   flex: 1;
-  padding: 4px 6px;
+  padding: 5px 6px;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -142,6 +141,7 @@ const fmtTime = (v: number) => {
   border-color: var(--accent);
 }
 .legato {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -153,6 +153,16 @@ const fmtTime = (v: number) => {
 }
 .legato input {
   accent-color: var(--accent);
+}
+
+@media (max-width: 520px) {
+  .mono-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .prio-cell {
+    flex: 1 1 100%;
+  }
 }
 
 .slide-enter-active,

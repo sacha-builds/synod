@@ -157,10 +157,6 @@ onMounted(() => {
     </header>
 
     <main class="layout">
-      <section class="scope-section">
-        <Oscilloscope :analyser="synth?.analyser ?? null" />
-      </section>
-
       <section class="oscillators panel">
         <h3 class="panel-title">Oscillators</h3>
         <div class="osc-grid">
@@ -170,19 +166,25 @@ onMounted(() => {
         </div>
       </section>
 
-      <section class="filter-section">
-        <FilterPanel :filter="patch.filter" />
+      <section class="scope-section">
+        <Oscilloscope :analyser="synth?.analyser ?? null" />
       </section>
 
-      <section class="env-row">
+      <section class="ampenv-section">
         <EnvelopePanel title="Amp Envelope" :env="patch.ampEnvelope" />
+      </section>
+
+      <section class="filtenv-section">
         <EnvelopePanel title="Filter Envelope" :env="patch.filterEnvelope" />
+      </section>
+
+      <section class="filter-section">
+        <FilterPanel :filter="patch.filter" />
       </section>
 
       <section class="voice-section">
         <VoicePanel :patch="patch" />
       </section>
-
     </main>
 
     <footer class="kbd-footer">
@@ -311,41 +313,41 @@ onMounted(() => {
   padding: 12px;
   grid-template-columns: 1fr;
   grid-template-areas:
-    'scope'
     'osc'
+    'scope'
+    'ampenv'
+    'filtenv'
     'filter'
-    'env'
     'voice';
 }
-@media (min-width: 980px) {
+@media (min-width: 900px) {
   .layout {
-    grid-template-columns: 1.3fr 1fr;
+    grid-template-columns: 1.35fr 1fr;
     grid-template-areas:
-      'scope scope'
-      'osc env'
-      'filter env'
-      'voice voice';
+      'osc    scope'
+      'ampenv filtenv'
+      'filter voice';
   }
-}
-.scope-section {
-  grid-area: scope;
 }
 .oscillators {
   grid-area: osc;
 }
 .osc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
+}
+.scope-section {
+  grid-area: scope;
+}
+.ampenv-section {
+  grid-area: ampenv;
+}
+.filtenv-section {
+  grid-area: filtenv;
 }
 .filter-section {
   grid-area: filter;
-}
-.env-row {
-  grid-area: env;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 .voice-section {
   grid-area: voice;
