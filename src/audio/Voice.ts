@@ -61,6 +61,10 @@ export class Voice {
    *  construction; routing changes take effect on the next note. */
   private filter2Active: boolean
   private amp: GainNode
+  /** Post-amp gain that MIDI aftertouch (poly and channel) modulates.
+   *  Sits between the amp envelope and the output so pressure never fights
+   *  the envelope — it multiplies on top of it. Idle value is 1.0. */
+  private expression: GainNode
 
   /** Current MIDI note. Mutable in mono mode. */
   note: number
@@ -106,7 +110,10 @@ export class Voice {
 
     this.amp = ctx.createGain()
     this.amp.gain.value = 0
-    this.amp.connect(this.output)
+    this.expression = ctx.createGain()
+    this.expression.gain.value = 1
+    this.amp.connect(this.expression)
+    this.expression.connect(this.output)
 
     this.filter2Active = patch.filter2.enabled
     if (!this.filter2Active) {
@@ -281,6 +288,13 @@ export class Voice {
     else this.filter2.type = type
   }
 
+  /** Set the aftertouch-driven expression gain. Pressure is 0..1. Mapped to a
+   *  gain of 1.0..1.5 so max pressure is an audible lift without clipping. */
+  setPressure(pressure: number): void {
+    const p = pressure < 0 ? 0 : pressure > 1 ? 1 : pressure
+    this.expression.gain.setTargetAtTime(1 + p * 0.5, this.ctx.currentTime, 0.02)
+  }
+
   stop(): void {
     const stopAt = this.endTime === Infinity ? this.ctx.currentTime : this.endTime
     this.oscillators.forEach((o) => {
@@ -309,6 +323,11 @@ export class Voice {
     })
     try {
       this.amp.disconnect()
+    } catch {
+      /* already disconnected */
+    }
+    try {
+      this.expression.disconnect()
     } catch {
       /* already disconnected */
     }

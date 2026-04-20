@@ -577,6 +577,12 @@ function initPatch(e: Event) {
 const midi = useMidi({
   noteOn: (note, velocity) => startNote(note, velocity),
   noteOff: (note) => stopNote(note),
+  polyAftertouch: (note, pressure) => {
+    synth.value?.setPolyPressure(note, pressure / 127)
+  },
+  channelAftertouch: (pressure) => {
+    synth.value?.setChannelPressure(pressure / 127)
+  },
 })
 
 const midiBlink = ref(false)

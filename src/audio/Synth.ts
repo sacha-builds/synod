@@ -81,6 +81,20 @@ class Part {
     else this.noteOffPoly(note, atTime)
   }
 
+  /** Apply a pressure value (0..1) to the voice(s) playing the given raw
+   *  MIDI note, if any. Used by poly aftertouch routing. */
+  setVoicePressure(note: number, pressure: number): void {
+    const poly = this.polyVoices.get(note)
+    if (poly) poly.setPressure(pressure)
+    if (this.monoVoice && this.monoVoice.note === note) this.monoVoice.setPressure(pressure)
+  }
+
+  /** Apply a pressure to every voice in the part. Used by channel AT. */
+  setAllPressure(pressure: number): void {
+    for (const v of this.polyVoices.values()) v.setPressure(pressure)
+    this.monoVoice?.setPressure(pressure)
+  }
+
   /** Graceful release of everything — uses the envelope release. */
   releaseAll(): void {
     for (const voice of this.polyVoices.values()) {
@@ -285,6 +299,21 @@ export class Synth {
 
   setPartVoiceMode(partIdx: 0 | 1, mode: VoiceMode): void {
     this.parts[partIdx].setVoiceMode(mode)
+  }
+
+  /** Route polyphonic aftertouch to the voice(s) playing a given raw MIDI
+   *  note across both parts. Under 'split' bimode we don't know which part
+   *  got the note — both parts try, whichever has the voice handles it. */
+  setPolyPressure(note: number, pressure: number): void {
+    this.parts[0].setVoicePressure(note, pressure)
+    this.parts[1].setVoicePressure(note, pressure)
+  }
+
+  /** Channel aftertouch: one pressure value applied to every sounding voice
+   *  across both parts. */
+  setChannelPressure(pressure: number): void {
+    this.parts[0].setAllPressure(pressure)
+    this.parts[1].setAllPressure(pressure)
   }
 
   rescheduleReleases(): void {
