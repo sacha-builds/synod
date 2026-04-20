@@ -24,6 +24,9 @@ export interface EnvelopePatch {
 
 export type FilterType = 'lowpass' | 'highpass' | 'bandpass' | 'notch' | 'allpass'
 
+export type VoiceMode = 'mono' | 'para' | 'poly'
+export type NotePriority = 'last' | 'low' | 'high'
+
 export interface FilterPatch {
   type: FilterType
   /** Cutoff in Hz (20..20000) */
@@ -41,6 +44,13 @@ export interface SynthPatch {
   ampEnvelope: EnvelopePatch
   filterEnvelope: EnvelopePatch
   filter: FilterPatch
+  voiceMode: VoiceMode
+  /** Portamento / glide time in seconds (mono only). 0 = instant pitch change. */
+  glide: number
+  /** Which held note plays when multiple are pressed (mono only). */
+  notePriority: NotePriority
+  /** Mono only. When true, new notes played while another is held don't retrigger envelopes. */
+  legato: boolean
 }
 
 export function defaultPatch(): SynthPatch {
@@ -54,6 +64,10 @@ export function defaultPatch(): SynthPatch {
     ampEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.4 },
     filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 0.3 },
     filter: { type: 'lowpass', cutoff: 1200, resonance: 2, envAmount: 3000 },
+    voiceMode: 'poly',
+    glide: 0,
+    notePriority: 'last',
+    legato: false,
   }
 }
 

@@ -8,6 +8,7 @@ import FilterPanel from './components/FilterPanel.vue'
 import Oscilloscope from './components/Oscilloscope.vue'
 import KeyboardInput from './components/KeyboardInput.vue'
 import Knob from './components/Knob.vue'
+import VoicePanel from './components/VoicePanel.vue'
 import { useMidi } from './composables/useMidi'
 
 const patch = reactive(defaultPatch())
@@ -97,6 +98,11 @@ watch(
   (t) => synth.value?.setFilterType(t),
 )
 
+watch(
+  () => patch.voiceMode,
+  (m) => synth.value?.setVoiceMode(m),
+)
+
 onMounted(() => {
   // Unlock audio on any user gesture
   const handler = () => {
@@ -178,6 +184,10 @@ onMounted(() => {
       <section class="env-row">
         <EnvelopePanel title="Amp Envelope" :env="patch.ampEnvelope" />
         <EnvelopePanel title="Filter Envelope" :env="patch.filterEnvelope" />
+      </section>
+
+      <section class="voice-section">
+        <VoicePanel :patch="patch" />
       </section>
 
       <section class="kbd-section panel">
@@ -308,6 +318,7 @@ onMounted(() => {
     'osc'
     'filter'
     'env'
+    'voice'
     'kbd';
 }
 @media (min-width: 980px) {
@@ -317,6 +328,7 @@ onMounted(() => {
       'scope scope'
       'osc env'
       'filter env'
+      'voice voice'
       'kbd kbd';
   }
 }
@@ -339,6 +351,9 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.voice-section {
+  grid-area: voice;
 }
 .kbd-section {
   grid-area: kbd;
