@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Synth } from './audio/Synth'
 import { defaultPatch } from './audio/types'
 import OscillatorPanel from './components/OscillatorPanel.vue'
@@ -8,10 +8,12 @@ import FilterPanel from './components/FilterPanel.vue'
 import Oscilloscope from './components/Oscilloscope.vue'
 import KeyboardInput from './components/KeyboardInput.vue'
 import Knob from './components/Knob.vue'
+import { useMidi } from './composables/useMidi'
 
 const patch = reactive(defaultPatch())
 const synth = shallowRef<Synth | null>(null)
 const started = ref(false)
+const midiActivity = ref(0)
 
 async function start() {
   if (synth.value) {
@@ -26,12 +28,42 @@ async function start() {
 }
 
 function onNoteOn(note: number, velocity: number) {
-  if (!synth.value) return
+  if (!synth.value) {
+    // If MIDI hits before the user has clicked, try to unlock; browsers may reject.
+    start().then(() => synth.value?.noteOn(note, velocity))
+    return
+  }
   synth.value.noteOn(note, velocity)
 }
 function onNoteOff(note: number) {
   synth.value?.noteOff(note)
 }
+
+const midi = useMidi({
+  noteOn: (note, velocity) => {
+    midiActivity.value = performance.now()
+    onNoteOn(note, velocity)
+  },
+  noteOff: (note) => onNoteOff(note),
+})
+
+const midiBlink = ref(false)
+watch(
+  () => midi.lastMessageAt.value,
+  () => {
+    midiBlink.value = true
+    setTimeout(() => (midiBlink.value = false), 80)
+  },
+)
+
+const midiLabel = computed(() => {
+  if (midi.status.value === 'unsupported') return 'MIDI UNSUPPORTED'
+  if (midi.status.value === 'denied') return 'MIDI DENIED'
+  if (midi.status.value === 'pending') return 'MIDI…'
+  if (midi.inputs.value.length === 0) return 'NO MIDI DEVICE'
+  if (midi.inputs.value.length === 1) return midi.inputs.value[0].name.toUpperCase()
+  return `${midi.inputs.value.length} MIDI DEVICES`
+})
 
 // Keep master gain in sync
 watch(
@@ -57,9 +89,22 @@ onMounted(() => {
         <span class="name">SYNOD</span>
         <span class="version">v0.0.1</span>
       </div>
-      <div class="status">
-        <span class="dot" :class="{ on: started }" />
-        <span>{{ started ? 'AUDIO READY' : 'CLICK OR PRESS ANY KEY' }}</span>
+      <div class="status-group">
+        <div class="status">
+          <span class="dot" :class="{ on: started }" />
+          <span>{{ started ? 'AUDIO READY' : 'CLICK OR PRESS ANY KEY' }}</span>
+        </div>
+        <div class="status midi" :title="midi.inputs.value.map((i) => i.name).join(', ')">
+          <span
+            class="dot"
+            :class="{
+              on: midi.status.value === 'ready' && midi.inputs.value.length > 0,
+              warn: midi.status.value === 'denied' || midi.status.value === 'unsupported',
+              blink: midiBlink,
+            }"
+          />
+          <span>{{ midiLabel }}</span>
+        </div>
       </div>
       <div class="master">
         <Knob
@@ -148,16 +193,32 @@ onMounted(() => {
   letter-spacing: 0.1em;
   color: var(--text-dim);
 }
+.status-group {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
 .status .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--text-faint);
-  transition: background 200ms;
+  transition: background 200ms, box-shadow 200ms;
 }
 .status .dot.on {
   background: var(--cool);
   box-shadow: 0 0 6px var(--cool);
+}
+.status .dot.warn {
+  background: var(--warn);
+  box-shadow: 0 0 6px var(--warn);
+}
+.status .dot.blink {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+.status.midi {
+  cursor: help;
 }
 .master {
   min-width: 60px;
