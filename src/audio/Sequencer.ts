@@ -1,5 +1,5 @@
 import { rateToSeconds } from './Arp'
-import type { SeqPatch } from './types'
+import type { SeqPatch, SynthPatch } from './types'
 
 export interface SeqCallbacks {
   /** Trigger a note on the synth. */
@@ -21,6 +21,7 @@ export interface SeqCallbacks {
  */
 export class Sequencer {
   patch: SeqPatch
+  private synthPatch: SynthPatch
   private ctx: AudioContext
   private cb: SeqCallbacks
 
@@ -33,9 +34,10 @@ export class Sequencer {
   private lastNote: number | null = null
   private lastNoteId = 0
 
-  constructor(ctx: AudioContext, patch: SeqPatch, cb: SeqCallbacks) {
+  constructor(ctx: AudioContext, synthPatch: SynthPatch, cb: SeqCallbacks) {
     this.ctx = ctx
-    this.patch = patch
+    this.synthPatch = synthPatch
+    this.patch = synthPatch.seq
     this.cb = cb
   }
 
@@ -140,6 +142,6 @@ export class Sequencer {
   }
 
   private stepDuration(): number {
-    return rateToSeconds(this.patch.bpm, this.patch.rate)
+    return rateToSeconds(this.synthPatch.bpm, this.patch.rate)
   }
 }

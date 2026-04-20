@@ -54,7 +54,7 @@ const fmtInt = (v: number) => v.toFixed(0)
       </div>
 
       <div class="knobs">
-        <Knob v-model="patch.arp.bpm" :min="30" :max="240" :step="1" label="BPM" :format="fmtInt" />
+        <Knob v-model="patch.bpm" :min="30" :max="240" :step="1" label="BPM" :format="fmtInt" />
         <Knob
           v-model="patch.arp.octaves"
           :min="1"

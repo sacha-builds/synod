@@ -432,7 +432,7 @@ function start(): void {
     const s = new Synth(patch)
     synth.value = s
     // Arp drives the synth directly via its callbacks.
-    arp.value = new Arp(s.ctx, patch.arp, {
+    arp.value = new Arp(s.ctx, patch, {
       noteOn: (note, velocity) => {
         if (!synth.value) return
         activeNotes.add(note)
@@ -446,7 +446,7 @@ function start(): void {
         arpCurrentStep.value = patternIdx
       },
     })
-    seq.value = new Sequencer(s.ctx, patch.seq, {
+    seq.value = new Sequencer(s.ctx, patch, {
       noteOn: (note, velocity) => {
         if (!synth.value) return
         activeNotes.add(note)
@@ -945,6 +945,7 @@ onBeforeUnmount(() => {
 
         <section class="seq-section">
           <SequencerPanel
+            :patch="patch"
             :seq="patch.seq"
             :is-playing="seqPlaying"
             :current-step="seqCurrentStep"

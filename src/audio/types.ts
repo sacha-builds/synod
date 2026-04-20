@@ -79,8 +79,6 @@ export interface ArpPatch {
   enabled: boolean
   mode: ArpMode
   rate: ArpRate
-  /** Tempo in beats per minute (30..240) */
-  bpm: number
   /** Note-on to note-off as a fraction of step duration (0.05..1) */
   gate: number
   /** 0 = straight, >0 delays every other step (0..0.5 internal; UI shows %) */
@@ -137,8 +135,6 @@ export interface SeqStep {
 
 export interface SeqPatch {
   enabled: boolean
-  /** 30..240 */
-  bpm: number
   rate: ArpRate
   /** Steps in the cycle, 1..16. Steps beyond this are retained but inactive. */
   length: number
@@ -156,6 +152,10 @@ export interface SynthPatch {
   splitNote: number
   /** Master gain 0..1 */
   masterGain: number
+  /** Shared tempo for arp and sequencer (30..240). Kept at the top level so
+   *  both modules always run in lockstep — they used to have independent
+   *  bpm fields which drifted apart. */
+  bpm: number
   fx: FXPatch
   arp: ArpPatch
   seq: SeqPatch
@@ -189,6 +189,7 @@ export function defaultPatch(): SynthPatch {
     bimode: 'single',
     splitNote: 60, // middle C
     masterGain: 0.6,
+    bpm: 120,
     fx: {
       reverb: { enabled: false, decay: 2.0, mix: 0.3 },
       delay: { enabled: false, time: 0.3, feedback: 0.35, mix: 0.3 },
@@ -197,7 +198,6 @@ export function defaultPatch(): SynthPatch {
       enabled: false,
       mode: 'up',
       rate: '1/16',
-      bpm: 120,
       gate: 0.7,
       swing: 0,
       octaves: 1,
@@ -208,12 +208,11 @@ export function defaultPatch(): SynthPatch {
     },
     seq: {
       enabled: false,
-      bpm: 120,
       rate: '1/16',
       length: 16,
       steps: Array.from({ length: 16 }, (_, i) => ({
         active: false,
-        note: 60 + (i % 8), // C4 ascending by default — inactive so nothing plays yet
+        note: 60 + (i % 8),
         velocity: 100,
         gate: 0.5,
       })),
@@ -246,7 +245,6 @@ export interface LegacySynthPatch {
 function defaultSeq(): SeqPatch {
   return {
     enabled: false,
-    bpm: 120,
     rate: '1/16',
     length: 16,
     steps: Array.from({ length: 16 }, (_, i) => ({
@@ -263,9 +261,19 @@ function defaultSeq(): SeqPatch {
  *  pre-sequencer presets). */
 export function migratePatch(raw: unknown): SynthPatch {
   if (raw && typeof raw === 'object' && 'parts' in raw) {
-    const p = raw as SynthPatch
+    const p = raw as SynthPatch & {
+      arp: ArpPatch & { bpm?: number }
+      seq: SeqPatch & { bpm?: number }
+    }
     // Backfill newer fields on presets saved before they existed.
     if (!p.seq) p.seq = defaultSeq()
+    // Hoist per-module bpm fields into the new shared synth-level bpm.
+    if (typeof p.bpm !== 'number') {
+      p.bpm = p.arp?.bpm ?? p.seq?.bpm ?? 120
+    }
+    // Drop the now-obsolete per-module bpm fields so they can't drift.
+    if (p.arp && 'bpm' in p.arp) delete p.arp.bpm
+    if (p.seq && 'bpm' in p.seq) delete p.seq.bpm
     return p
   }
   const old = raw as LegacySynthPatch
@@ -289,6 +297,7 @@ export function migratePatch(raw: unknown): SynthPatch {
     bimode: 'single',
     splitNote: 60,
     masterGain: old.masterGain,
+    bpm: (old.arp as ArpPatch & { bpm?: number }).bpm ?? 120,
     fx: old.fx,
     arp: old.arp,
     seq: defaultSeq(),

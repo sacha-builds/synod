@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { SeqPatch } from '../audio/types'
+import type { SeqPatch, SynthPatch } from '../audio/types'
 import { ARP_RATES } from '../audio/Arp'
 import Knob from './Knob.vue'
 
 const props = defineProps<{
+  patch: SynthPatch
   seq: SeqPatch
   isPlaying: boolean
   currentStep: number
@@ -52,6 +53,11 @@ function setLength(e: Event) {
 function setVelocity(i: number, e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10)
   props.seq.steps[i].velocity = Math.max(1, Math.min(127, v))
+}
+
+function setGate(i: number, e: Event) {
+  const v = parseFloat((e.target as HTMLInputElement).value)
+  props.seq.steps[i].gate = Math.max(0.05, Math.min(1, v))
 }
 
 const visibleSteps = computed(() =>
@@ -105,13 +111,14 @@ const visibleSteps = computed(() =>
         </div>
 
         <Knob
-          :model-value="seq.bpm"
-          @update:model-value="seq.bpm = Math.round($event)"
+          :model-value="patch.bpm"
+          @update:model-value="patch.bpm = Math.round($event)"
           :min="30"
           :max="240"
           :step="1"
           label="BPM"
           :format="(v) => v.toFixed(0)"
+          title="Shared tempo — drives both the arp and the sequencer"
         />
 
         <div class="length-field">
@@ -164,17 +171,34 @@ const visibleSteps = computed(() =>
               <span class="bar-fill" :style="{ height: (s.step.velocity / 127) * 100 + '%' }" />
             </button>
 
-            <input
-              type="range"
-              :value="s.step.velocity"
-              min="1"
-              max="127"
-              step="1"
-              class="vel-slider"
-              @input="setVelocity(s.idx, $event)"
-              @click.stop
-              title="Velocity"
-            />
+            <div class="slider-row">
+              <span class="slider-tag" title="Velocity">V</span>
+              <input
+                type="range"
+                :value="s.step.velocity"
+                min="1"
+                max="127"
+                step="1"
+                class="mini-slider"
+                @input="setVelocity(s.idx, $event)"
+                @click.stop
+                :title="`Velocity: ${s.step.velocity}`"
+              />
+            </div>
+            <div class="slider-row">
+              <span class="slider-tag" title="Gate length">G</span>
+              <input
+                type="range"
+                :value="s.step.gate"
+                min="0.05"
+                max="1"
+                step="0.01"
+                class="mini-slider"
+                @input="setGate(s.idx, $event)"
+                @click.stop
+                :title="`Gate: ${Math.round(s.step.gate * 100)}%`"
+              />
+            </div>
 
             <span class="step-label">{{ s.idx + 1 }}</span>
           </div>
@@ -443,28 +467,44 @@ const visibleSteps = computed(() =>
   background: var(--accent);
 }
 
-.vel-slider {
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px 0 4px;
+}
+.slider-row:last-of-type {
+  padding-bottom: 2px;
+}
+.slider-tag {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  color: var(--text-faint);
+  width: 8px;
+  flex-shrink: 0;
+}
+.mini-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
   height: 3px;
-  margin: 4px 0 2px 0;
   background: var(--bg-1);
   border: none;
   border-radius: 1px;
 }
-.vel-slider::-webkit-slider-thumb {
+.mini-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--text-dim);
   cursor: pointer;
 }
-.vel-slider::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
+.mini-slider::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--text-dim);
   cursor: pointer;

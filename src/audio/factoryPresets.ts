@@ -154,7 +154,7 @@ export const FACTORY_PRESETS: SynodPreset[] = [
       p.arp.enabled = true
       p.arp.mode = 'updown'
       p.arp.rate = '1/16'
-      p.arp.bpm = 110
+      p.bpm = 110
       p.arp.octaves = 2
       p.arp.gate = 0.55
     }),

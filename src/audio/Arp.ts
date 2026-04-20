@@ -1,4 +1,4 @@
-import type { ArpMode, ArpPatch, ArpRate } from './types'
+import type { ArpMode, ArpPatch, ArpRate, SynthPatch } from './types'
 
 export interface ArpCallbacks {
   /** Called when the arp wants a voice triggered. */
@@ -29,6 +29,8 @@ export class Arp {
   private ctx: AudioContext
   private cb: ArpCallbacks
   patch: ArpPatch
+  /** Full patch reference so we can read the synth-level shared BPM. */
+  private synthPatch: SynthPatch
 
   /** Held notes — what the arp is cycling through. Maintained as a set for
    *  O(1) add/remove, plus a sorted-ascending array the pick function uses. */
@@ -49,9 +51,10 @@ export class Arp {
    *  next addHeldNote will clear the held set first — i.e. "new chord". */
   private latchReset = false
 
-  constructor(ctx: AudioContext, patch: ArpPatch, cb: ArpCallbacks) {
+  constructor(ctx: AudioContext, synthPatch: SynthPatch, cb: ArpCallbacks) {
     this.ctx = ctx
-    this.patch = patch
+    this.synthPatch = synthPatch
+    this.patch = synthPatch.arp
     this.cb = cb
   }
 
@@ -259,7 +262,7 @@ export class Arp {
   }
 
   private stepDuration(): number {
-    return rateToSeconds(this.patch.bpm, this.patch.rate)
+    return rateToSeconds(this.synthPatch.bpm, this.patch.rate)
   }
 }
 

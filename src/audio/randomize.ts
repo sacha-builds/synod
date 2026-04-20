@@ -107,6 +107,7 @@ export function clonePart(part: PartPatch): PartPatch {
  *  proxy references so Vue reactivity keeps flowing. */
 export function restoreSynthPatch(patch: SynthPatch, snap: SynthPatch): void {
   patch.masterGain = snap.masterGain
+  patch.bpm = snap.bpm
   patch.activePart = snap.activePart
   patch.bimode = snap.bimode
   patch.splitNote = snap.splitNote
@@ -136,7 +137,6 @@ function restoreArp(arp: ArpPatch, snap: ArpPatch): void {
   arp.enabled = snap.enabled
   arp.mode = snap.mode
   arp.rate = snap.rate
-  arp.bpm = snap.bpm
   arp.gate = snap.gate
   arp.swing = snap.swing
   arp.octaves = snap.octaves
