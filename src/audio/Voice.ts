@@ -33,6 +33,11 @@ export class Voice {
   released = false
   private endTime = Infinity
 
+  /** Semitone offset added to every frequency calculation. Lets a Part
+   *  apply its own `transpose` without the voice's bookkeeping (the
+   *  polyVoices map, mono priority, note-off lookup) needing to know. */
+  private noteOffset: number
+
   constructor(
     ctx: AudioContext,
     output: AudioNode,
@@ -40,14 +45,16 @@ export class Voice {
     velocity: number,
     patch: PartPatch,
     startTime?: number,
+    noteOffset = 0,
   ) {
     this.ctx = ctx
     this.output = output
     this.patchRef = patch
     this.note = note
+    this.noteOffset = noteOffset
 
     const now = startTime ?? ctx.currentTime
-    const baseFreq = midiToFrequency(note)
+    const baseFreq = midiToFrequency(note + this.noteOffset)
     const velGain = Math.max(0.05, velocity / 127)
 
     this.mixer = ctx.createGain()
@@ -133,7 +140,7 @@ export class Voice {
     this.released = false
     this.endTime = Infinity
     const now = this.ctx.currentTime
-    const baseFreq = midiToFrequency(note)
+    const baseFreq = midiToFrequency(note + this.noteOffset)
     const patch = this.patchRef
 
     this.oscillators.forEach((osc, i) => {

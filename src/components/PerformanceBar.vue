@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { BiMode, SynthPatch } from '../audio/types'
+import Knob from './Knob.vue'
 
 const props = defineProps<{ patch: SynthPatch }>()
+
+const activePart = computed(() => props.patch.parts[props.patch.activePart])
 
 const BIMODES: { id: BiMode; label: string; title: string }[] = [
   { id: 'single', label: 'SINGLE', title: 'One part plays the keyboard' },
@@ -33,6 +36,16 @@ function setBimode(m: BiMode) {
 function setSplit(e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10)
   props.patch.splitNote = Math.max(0, Math.min(127, v))
+}
+
+function fmtSemis(v: number): string {
+  const i = Math.round(v)
+  if (i === 0) return '0'
+  return i > 0 ? '+' + i : String(i)
+}
+
+function fmtLevel(v: number): string {
+  return (v * 100).toFixed(0) + '%'
 }
 </script>
 
@@ -86,6 +99,30 @@ function setSplit(e: Event) {
       >
         B
       </button>
+    </div>
+
+    <!-- Per-part performance knobs, always visible (in Single mode they apply
+         to Part A). Kept tight so they share the bar rather than creating a
+         new row. -->
+    <div class="part-knobs">
+      <Knob
+        :model-value="activePart.transpose"
+        @update:model-value="activePart.transpose = Math.round($event)"
+        :min="-24"
+        :max="24"
+        :step="1"
+        label="TRANSPOSE"
+        :format="fmtSemis"
+        :size="40"
+      />
+      <Knob
+        v-model="activePart.level"
+        :min="0"
+        :max="1"
+        label="LEVEL"
+        :format="fmtLevel"
+        :size="40"
+      />
     </div>
   </div>
 </template>
@@ -182,6 +219,13 @@ function setSplit(e: Event) {
   color: var(--accent-hi);
   background: var(--accent-dim);
   border-color: var(--accent);
+}
+
+.part-knobs {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+  align-items: center;
 }
 
 @media (max-width: 640px) {

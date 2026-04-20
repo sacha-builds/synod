@@ -10,6 +10,10 @@ interface PresetListItem {
 const props = defineProps<{
   presets: PresetListItem[]
   currentId: string | null
+  /** Full display string computed by the parent — in bitimbral this is
+   *  "Name A | Name B" with equal truncation; in single mode it's just
+   *  the preset name. Dirty asterisk is appended here, not upstream. */
+  displayName: string
   isDirty: boolean
 }>()
 
@@ -29,10 +33,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 
 const currentPreset = computed(() => props.presets.find((p) => p.id === props.currentId) ?? null)
 const currentIsBuiltin = computed(() => currentPreset.value?.builtin === true)
-const displayName = computed(() => {
-  if (!currentPreset.value) return 'Untitled'
-  return props.isDirty ? `${currentPreset.value.name} *` : currentPreset.value.name
-})
+const display = computed(() => (props.isDirty ? `${props.displayName} *` : props.displayName))
 
 function onSelect(e: Event) {
   const id = (e.target as HTMLSelectElement).value
@@ -57,7 +58,7 @@ function onFilePicked(e: Event) {
       <button class="nav-btn" title="Previous preset" @click="emit('prev')">◀</button>
       <div class="select-wrap">
         <select :value="currentId ?? ''" @change="onSelect" class="preset-select">
-          <option v-if="!currentId" value="" disabled>{{ displayName }}</option>
+          <option v-if="!currentId" value="" disabled>{{ display }}</option>
           <optgroup label="Factory">
             <option
               v-for="p in presets.filter((p) => p.builtin)"
@@ -78,7 +79,7 @@ function onFilePicked(e: Event) {
           </optgroup>
         </select>
         <span class="display" :class="{ dirty: isDirty }">
-          {{ displayName }}
+          {{ display }}
           <span class="caret">▾</span>
         </span>
       </div>

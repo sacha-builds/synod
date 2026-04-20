@@ -49,6 +49,10 @@ const arpCurrentStep = ref(-1)
 // --- Preset management ---
 const userPresets = ref<SynodPreset[]>(loadUserPresets())
 const currentPresetId = ref<string | null>(null)
+/** Per-part "last loaded preset" pointer. In Single mode only [0] matters;
+ *  in bitimbral modes each side is tracked independently so the preset bar
+ *  can show "Name A | Name B". */
+const partPresetIds = ref<[string | null, string | null]>([null, null])
 const isDirty = ref(false)
 /** Block the dirty-detector briefly after loading a preset so the restore
  *  itself doesn't flag the patch as dirty. */
@@ -100,9 +104,6 @@ function loadPreset(id: string): void {
   const currentlyBitimbral = patch.bimode !== 'single'
 
   if (currentlyBitimbral && !presetIsDual) {
-    // Layered or split performance + a single-timbre preset → load the
-    // preset's sound into the active part only. Keep bimode, split note,
-    // the other part, FX, arp, master — the user's performance survives.
     suppressDirty = true
     const idx = patch.activePart
     synth.value?.parts[idx].releaseAll()
@@ -111,10 +112,11 @@ function loadPreset(id: string): void {
     setTimeout(() => {
       suppressDirty = false
     }, 50)
-    // The overall patch is now a hybrid, so mark dirty and clear the
-    // "current preset" pointer — saving would need a new name.
+    // Only the active part was changed — update its preset pointer, keep
+    // the other side's pointer so the preset bar can still show both names.
+    partPresetIds.value = idx === 0 ? [preset.id, partPresetIds.value[1]] : [partPresetIds.value[0], preset.id]
     currentPresetId.value = null
-    isDirty.value = true
+    isDirty.value = false
     saveLastPresetId(null)
     return
   }
@@ -122,6 +124,9 @@ function loadPreset(id: string): void {
   // Single mode, or the preset itself is a full dual performance.
   applyPatch(preset.patch)
   currentPresetId.value = preset.id
+  // Single-timbre preset: only Part A gets a name. Dual preset: both sides
+  // share the same preset id (and name).
+  partPresetIds.value = presetIsDual ? [preset.id, preset.id] : [preset.id, null]
   isDirty.value = false
   saveLastPresetId(preset.id)
 }
@@ -235,7 +240,34 @@ async function importPreset(file: File): Promise<void> {
   // Apply the patch but don't treat this as a user edit.
   applyPatch(start.patch)
   currentPresetId.value = start.id
+  const startIsDual = start.patch.bimode !== 'single'
+  partPresetIds.value = startIsDual ? [start.id, start.id] : [start.id, null]
 }
+
+/** Resolve the display name for a given part's last-loaded preset. */
+function partPresetName(idx: 0 | 1): string {
+  const id = partPresetIds.value[idx]
+  if (!id) return 'Untitled'
+  return allPresets.value.find((p) => p.id === id)?.name ?? 'Untitled'
+}
+
+/** Equal-truncate both names so the combined "A | B" string fits a target
+ *  length. Each side gets the same budget; names under budget aren't touched. */
+function truncateEqual(a: string, b: string, totalBudget: number): [string, string] {
+  const sep = ' | '
+  if (a.length + sep.length + b.length <= totalBudget) return [a, b]
+  const perSide = Math.max(4, Math.floor((totalBudget - sep.length) / 2))
+  const clip = (s: string) => (s.length <= perSide ? s : s.slice(0, perSide - 1) + '…')
+  return [clip(a), clip(b)]
+}
+
+const presetDisplayName = computed(() => {
+  if (patch.bimode === 'single') {
+    return partPresetName(0)
+  }
+  const [a, b] = truncateEqual(partPresetName(0), partPresetName(1), 28)
+  return `${a} | ${b}`
+})
 
 /** Create (if needed) and resume the synth synchronously from a user gesture.
  *  Must stay synchronous — iOS Safari drops the gesture across awaits. */
@@ -578,6 +610,7 @@ onBeforeUnmount(() => {
     <PresetBar
       :presets="presetListItems"
       :current-id="currentPresetId"
+      :display-name="presetDisplayName"
       :is-dirty="isDirty"
       @load="loadPreset"
       @prev="prevPreset"

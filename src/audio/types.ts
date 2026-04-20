@@ -119,6 +119,8 @@ export interface PartPatch {
   legato: boolean
   /** Per-part level 0..1 — used to balance the two parts in Layer/Split mode. */
   level: number
+  /** Semitone transpose applied to every note routed to this part (-24..+24). */
+  transpose: number
 }
 
 export type BiMode = 'single' | 'layer' | 'split'
@@ -154,6 +156,7 @@ export function defaultPart(): PartPatch {
     notePriority: 'last',
     legato: false,
     level: 1,
+    transpose: 0,
   }
 }
 
@@ -225,6 +228,7 @@ export function migratePatch(raw: unknown): SynthPatch {
     notePriority: old.notePriority,
     legato: old.legato,
     level: 1,
+    transpose: 0,
   }
   return {
     parts: [partA, defaultPart()],

@@ -124,7 +124,7 @@ class Part {
       existing.release(this.patch, startTime)
       existing.stop()
     }
-    const voice = new Voice(this.ctx, this.partBus, note, velocity, this.patch, startTime)
+    const voice = new Voice(this.ctx, this.partBus, note, velocity, this.patch, startTime, this.patch.transpose)
     this.polyVoices.set(note, voice)
     this.allVoices.add(voice)
   }
@@ -156,7 +156,7 @@ class Part {
     if (this.monoVoice && !this.monoVoice.isDone(this.ctx.currentTime) && this.monoVoice.note === active) return
 
     if (!this.monoVoice || this.monoVoice.isDone(this.ctx.currentTime)) {
-      const voice = new Voice(this.ctx, this.partBus, active, velocity, this.patch, startTime)
+      const voice = new Voice(this.ctx, this.partBus, active, velocity, this.patch, startTime, this.patch.transpose)
       this.monoVoice = voice
       this.allVoices.add(voice)
       return
