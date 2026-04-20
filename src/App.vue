@@ -51,9 +51,11 @@ function releaseAll() {
   synth.value?.allNotesOff()
 }
 
-function panic() {
+function panic(e: Event) {
   synth.value?.panic()
   activeNotes.clear()
+  // Blur after click so mobile doesn't keep the button in :hover/:focus state.
+  ;(e.currentTarget as HTMLElement)?.blur?.()
 }
 
 const midi = useMidi({
@@ -220,7 +222,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="topbar-right">
-        <button class="panic" @click="panic" title="Cut all sound immediately">
+        <button class="panic" @click="panic($event)" title="Cut all sound immediately">
           <span class="panic-icon">■</span>
           PANIC
         </button>
@@ -256,7 +258,7 @@ onBeforeUnmount(() => {
       <main class="layout" ref="layoutRef" @scroll="updateScroll">
         <details class="oscillators panel" open>
           <summary class="panel-title">
-            <span class="chevron">▾</span>
+            <span class="chevron">▼</span>
             Oscillators
           </summary>
           <div class="osc-grid">
@@ -299,6 +301,9 @@ onBeforeUnmount(() => {
               PARALLEL
             </button>
           </div>
+        </section>
+
+        <section class="filter2-section">
           <FilterPanel title="Filter 2" :filter="patch.filter2" show-enable />
         </section>
 
@@ -405,15 +410,30 @@ onBeforeUnmount(() => {
   border: 1px solid #6a2020;
   border-radius: 4px;
   transition: all 100ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
 }
-.panic:hover {
+/* Only apply hover styles on devices that actually have a hover pointer —
+   prevents iOS from keeping the "lit" state after a tap since it treats a
+   tapped element as hovered until you tap elsewhere. */
+@media (hover: hover) {
+  .panic:hover {
+    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+    box-shadow: 0 0 10px rgba(217, 83, 79, 0.5);
+  }
+}
+.panic:active {
   color: #fff;
   background: var(--danger);
   border-color: var(--danger);
   box-shadow: 0 0 10px rgba(217, 83, 79, 0.5);
-}
-.panic:active {
   transform: scale(0.97);
+}
+.panic:focus { outline: none; }
+.panic:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .panic-icon {
   font-size: 9px;
@@ -522,10 +542,11 @@ onBeforeUnmount(() => {
     grid-template-areas:
       'scope'
       'osc'
+      'voice'
       'ampenv'
       'filtenv'
       'filter'
-      'voice';
+      'filter2';
   }
 }
 @media (min-width: 900px) {
@@ -533,8 +554,9 @@ onBeforeUnmount(() => {
     grid-template-columns: 1.35fr 1fr;
     grid-template-areas:
       'osc    scope'
+      'osc    voice'
       'ampenv filtenv'
-      'filter voice';
+      'filter filter2';
   }
 }
 .oscillators {
@@ -559,6 +581,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.filter2-section {
+  grid-area: filter2;
 }
 .routing-bar {
   display: flex;

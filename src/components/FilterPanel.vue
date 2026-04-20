@@ -29,7 +29,7 @@ const types: { id: FilterType; label: string; path: string }[] = [
 <template>
   <details class="panel" :class="{ disabled: showEnable && !filter.enabled }" open>
     <summary class="panel-title">
-      <span class="chevron">▾</span>
+      <span class="chevron">▼</span>
       {{ title }}
       <label v-if="showEnable" class="enable-toggle" @click.stop>
         <input type="checkbox" v-model="filter.enabled" />

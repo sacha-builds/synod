@@ -142,11 +142,19 @@ details.panel > summary:hover {
   color: var(--text);
 }
 .chevron {
-  display: inline-block;
-  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   line-height: 1;
-  color: var(--text-faint);
-  transition: transform 160ms var(--ease-out);
+  color: var(--text-dim);
+  transition: transform 160ms var(--ease-out), color 160ms var(--ease-out);
+  font-size: 14px;
+  font-style: normal;
+}
+details.panel > summary:hover .chevron {
+  color: var(--accent-hi);
 }
 details.panel:not([open]) .chevron {
   transform: rotate(-90deg);

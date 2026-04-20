@@ -32,7 +32,7 @@ const fmtTime = (v: number) => {
 <template>
   <details class="panel env-panel" open>
     <summary class="panel-title">
-      <span class="chevron">▾</span>
+      <span class="chevron">▼</span>
       {{ title }}
     </summary>
     <div class="graph">

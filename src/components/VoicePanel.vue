@@ -26,7 +26,7 @@ const fmtTime = (v: number) => {
 <template>
   <details class="panel voice-panel" open>
     <summary class="panel-title">
-      <span class="chevron">▾</span>
+      <span class="chevron">▼</span>
       Voice
     </summary>
 
