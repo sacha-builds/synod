@@ -51,6 +51,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
   overflow: hidden;
+  /* Disable iOS double-tap-to-zoom so rapid tapping of piano keys is not
+   * interpreted as a zoom gesture. Pinch-to-zoom still works. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
