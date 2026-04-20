@@ -27,6 +27,10 @@ const activeNotes = reactive(new Set<number>())
  *  transitions when the arp is in latch mode. */
 const physicalHeld = reactive(new Set<number>())
 
+/** Index within the arp's pattern that's currently playing, for the step
+ *  indicator in the pattern editor. -1 when arp isn't playing. */
+const arpCurrentStep = ref(-1)
+
 /** Create (if needed) and resume the synth synchronously from a user gesture.
  *  Must stay synchronous — iOS Safari drops the gesture across awaits. */
 function start(): void {
@@ -43,6 +47,9 @@ function start(): void {
       noteOff: (note) => {
         activeNotes.delete(note)
         synth.value?.noteOff(note)
+      },
+      onStep: (patternIdx) => {
+        arpCurrentStep.value = patternIdx
       },
     })
   }
@@ -180,7 +187,10 @@ function safe<T>(label: string, fn: () => T): T | undefined {
 watch(
   () => patch.arp.enabled,
   (v) => {
-    if (!v) arp.value?.shutdown()
+    if (!v) {
+      arp.value?.shutdown()
+      arpCurrentStep.value = -1
+    }
   },
 )
 watch(
@@ -417,7 +427,7 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="arp-section">
-          <ArpPanel :patch="patch" />
+          <ArpPanel :patch="patch" :current-step="arpCurrentStep" />
         </section>
 
         <section class="fx-section">

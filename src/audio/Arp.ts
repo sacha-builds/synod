@@ -5,6 +5,10 @@ export interface ArpCallbacks {
   noteOn: (note: number, velocity: number) => void
   /** Called when the arp wants a voice released. */
   noteOff: (note: number) => void
+  /** Optional: fires at the audible time of each step. Receives the index
+   *  within the current pattern (0..patternLength-1), useful for UI
+   *  step-position indicators. */
+  onStep?: (patternIndex: number) => void
 }
 
 /**
@@ -135,30 +139,42 @@ export class Arp {
   private scheduleStep(absTime: number): void {
     if (this.sorted.length === 0) return
 
+    const patternLen = Math.max(1, this.patch.patternLength)
+    const patternIdx = this.stepIndex % patternLen
+
     // Resolve the step pattern overlay (active / octave / accent).
     let active = true
     let octaveShift = 0
     let velocityMul = 1
     if (this.patch.usePattern) {
-      const p = this.patch.pattern[this.stepIndex % Math.max(1, this.patch.patternLength)]
+      const p = this.patch.pattern[patternIdx]
       if (p) {
         active = p.active
         octaveShift = p.octave
         velocityMul = p.velocityMul
       }
     }
-    if (!active) return
 
     const stepDur = this.stepDuration()
     const gateSec = Math.max(0.005, stepDur * this.patch.gate)
     const delayOnMs = Math.max(0, (absTime - this.ctx.currentTime) * 1000)
     const delayOffMs = delayOnMs + gateSec * 1000
 
+    if (!active) {
+      // Still fire the step indicator for rest cells so the UI shows movement.
+      const stepId = window.setTimeout(() => {
+        this.pendingTimeouts.delete(stepId)
+        if (!this.running) return
+        this.cb.onStep?.(patternIdx)
+      }, delayOnMs)
+      this.pendingTimeouts.add(stepId)
+      return
+    }
+
     if (this.patch.mode === 'chord') {
-      // Play every held note as a block on each step.
       const velocity = clampVelocity(100 * velocityMul)
       for (const baseNote of this.sorted) {
-        this.firePair(baseNote + octaveShift * 12, velocity, delayOnMs, delayOffMs)
+        this.firePair(baseNote + octaveShift * 12, velocity, delayOnMs, delayOffMs, patternIdx)
       }
       return
     }
@@ -166,13 +182,14 @@ export class Arp {
     const picked = this.pickNote()
     if (picked === null) return
     const velocity = clampVelocity(100 * velocityMul)
-    this.firePair(picked + octaveShift * 12, velocity, delayOnMs, delayOffMs)
+    this.firePair(picked + octaveShift * 12, velocity, delayOnMs, delayOffMs, patternIdx)
   }
 
-  private firePair(note: number, velocity: number, onMs: number, offMs: number): void {
+  private firePair(note: number, velocity: number, onMs: number, offMs: number, patternIdx: number): void {
     const onId = window.setTimeout(() => {
       this.pendingTimeouts.delete(onId)
       if (!this.running) return
+      this.cb.onStep?.(patternIdx)
       this.cb.noteOn(note, velocity)
       this.sounding.add(note)
     }, onMs)

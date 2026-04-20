@@ -2,8 +2,9 @@
 import type { SynthPatch } from '../audio/types'
 import { ARP_MODES, ARP_RATES } from '../audio/Arp'
 import Knob from './Knob.vue'
+import ArpPattern from './ArpPattern.vue'
 
-defineProps<{ patch: SynthPatch }>()
+defineProps<{ patch: SynthPatch; currentStep: number }>()
 
 const fmtPct = (v: number) => (v * 100).toFixed(0) + '%'
 const fmtInt = (v: number) => v.toFixed(0)
@@ -71,6 +72,8 @@ const fmtInt = (v: number) => v.toFixed(0)
           </span>
         </label>
       </div>
+
+      <ArpPattern :arp="patch.arp" :current-step="currentStep" />
     </div>
   </details>
 </template>
