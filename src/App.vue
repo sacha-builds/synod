@@ -362,8 +362,20 @@ onMounted(() => {
   padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
 }
 
-/* Mobile topbar — wrap + compact */
+/* Mobile: tighter layout + topbar compaction */
 @media (max-width: 640px) {
+  .layout {
+    gap: 8px;
+    padding: 8px;
+  }
+  .env-row {
+    gap: 8px;
+  }
+  .osc-grid {
+    /* 3 oscillators never fit side-by-side on phone; stack cleanly */
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
   .topbar {
     flex-wrap: wrap;
     gap: 8px;
@@ -377,10 +389,22 @@ onMounted(() => {
     width: 100%;
     justify-content: center;
     font-size: 9px;
+    gap: 12px;
   }
   .panic {
     padding: 6px 10px;
     font-size: 9px;
+    letter-spacing: 0.12em;
+  }
+  .master {
+    min-width: 48px;
+  }
+  .kbd-footer {
+    padding: 6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  .brand .name {
+    font-size: 12px;
   }
 }
 </style>

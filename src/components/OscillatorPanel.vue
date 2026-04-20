@@ -79,6 +79,15 @@ const waveforms: { id: Waveform; label: string; path: string }[] = [
   border-radius: 6px;
   transition: opacity 150ms var(--ease-out);
 }
+@media (max-width: 640px) {
+  .osc {
+    padding: 10px;
+    gap: 8px;
+  }
+  .knobs {
+    gap: 2px;
+  }
+}
 .osc.disabled {
   opacity: 0.45;
 }

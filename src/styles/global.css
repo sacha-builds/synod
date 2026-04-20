@@ -98,6 +98,26 @@ input[type='range'] {
   margin: 0 0 10px 0;
 }
 
+@media (max-width: 640px) {
+  body {
+    font-size: 12px;
+  }
+  .panel {
+    padding: 10px;
+    border-radius: 6px;
+  }
+  .panel-title {
+    font-size: 9px;
+    margin-bottom: 8px;
+  }
+}
+
+@media (max-width: 420px) {
+  .panel {
+    padding: 8px;
+  }
+}
+
 .row {
   display: flex;
   gap: 12px;
