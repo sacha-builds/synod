@@ -707,7 +707,8 @@ let soundHintTimer: number | null = null
 function dismissSoundHint() {
   showSoundHint.value = false
   try {
-    localStorage.setItem('synod:soundHintDismissed', '1')
+    // sessionStorage — stays suppressed for this tab but returns next visit.
+    sessionStorage.setItem('synod:soundHintDismissed', '1')
   } catch {
     /* private-mode / quota */
   }
@@ -721,7 +722,7 @@ watch(started, (v) => {
   if (!v || !isMobile) return
   let dismissed = false
   try {
-    dismissed = localStorage.getItem('synod:soundHintDismissed') === '1'
+    dismissed = sessionStorage.getItem('synod:soundHintDismissed') === '1'
   } catch {
     /* ignore */
   }
@@ -731,6 +732,16 @@ watch(started, (v) => {
     showSoundHint.value = false
   }, 10000)
 })
+
+// One-time cleanup: if a user has the old sticky localStorage flag from an
+// earlier version, clear it so the new session-scoped hint can appear.
+try {
+  if (localStorage.getItem('synod:soundHintDismissed') === '1') {
+    localStorage.removeItem('synod:soundHintDismissed')
+  }
+} catch {
+  /* ignore */
+}
 
 onMounted(() => {
   // Unlock audio on any user gesture
