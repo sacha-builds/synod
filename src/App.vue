@@ -53,46 +53,131 @@ const arpCurrentStep = ref(-1)
 const isRecording = ref(false)
 const recordElapsed = ref(0)
 let recordTicker: number | null = null
+let recordFormat: RecordFormat = 'wav'
+let recordStartedAt = 0
 
-async function startRecording(format: RecordFormat): Promise<void> {
-  if (!synth.value) start()
-  if (!synth.value) return
-  try {
-    await synth.value.recorder.init()
-  } catch (e) {
-    console.error('[synod] Recorder init failed:', e)
-    alert('Could not initialize the recorder in this browser.')
-    return
+// For the browser-native (OGG/WebM/M4A) path we use MediaStream +
+// MediaRecorder instead of the AudioWorklet — it's simpler and the
+// browser does the encoding. Worklet still handles WAV/MP3/FLAC.
+let mediaRecorder: MediaRecorder | null = null
+let mediaStreamDest: MediaStreamAudioDestinationNode | null = null
+let mediaChunks: BlobPart[] = []
+let mediaMime = ''
+
+function pickNativeOggMime(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null
+  const candidates = [
+    'audio/ogg;codecs=opus',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/mp4',
+  ]
+  for (const c of candidates) {
+    if (MediaRecorder.isTypeSupported(c)) return c
   }
-  synth.value.recorder.start()
-  isRecording.value = true
-  recordElapsed.value = 0
-  recordTicker = window.setInterval(() => {
-    if (!synth.value) return
-    recordElapsed.value = synth.value.recorder.elapsedSeconds()
-  }, 100)
-  // Stash selected format so stopRecording knows how to encode.
-  recordFormat = format
+  return null
 }
 
-let recordFormat: RecordFormat = 'wav'
+function extFromMime(mime: string): string {
+  if (mime.includes('ogg')) return 'ogg'
+  if (mime.includes('webm')) return 'webm'
+  if (mime.includes('mp4')) return 'm4a'
+  return 'ogg'
+}
 
-async function stopRecording(): Promise<void> {
-  if (!synth.value || !isRecording.value) return
-  const result = synth.value.recorder.stop()
-  isRecording.value = false
+function tickElapsed() {
+  recordElapsed.value = (performance.now() - recordStartedAt) / 1000
+}
+
+function startTicker() {
+  recordStartedAt = performance.now()
+  recordElapsed.value = 0
+  recordTicker = window.setInterval(tickElapsed, 100)
+}
+
+function stopTicker() {
   if (recordTicker !== null) {
     clearInterval(recordTicker)
     recordTicker = null
   }
-  if (!result || result.left.length === 0) return
+}
+
+async function startRecording(format: RecordFormat): Promise<void> {
+  if (!synth.value) start()
+  if (!synth.value) return
+  recordFormat = format
+
+  if (format === 'ogg') {
+    const mime = pickNativeOggMime()
+    if (!mime) {
+      alert('OGG-family recording isn’t supported by this browser. Try WAV, MP3, or FLAC.')
+      return
+    }
+    const synthInst = synth.value
+    const dest = synthInst.ctx.createMediaStreamDestination()
+    synthInst.master.connect(dest)
+    mediaStreamDest = dest
+    mediaMime = mime
+    mediaChunks = []
+    const rec = new MediaRecorder(dest.stream, { mimeType: mime })
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) mediaChunks.push(e.data)
+    }
+    rec.start(250) // flush chunks periodically so we never lose the whole buffer
+    mediaRecorder = rec
+  } else {
+    // WAV / MP3 / FLAC all capture raw PCM via the worklet.
+    try {
+      await synth.value.recorder.init()
+    } catch (e) {
+      console.error('[synod] Recorder init failed:', e)
+      alert('Could not initialize the recorder in this browser.')
+      return
+    }
+    synth.value.recorder.start()
+  }
+
+  isRecording.value = true
+  startTicker()
+}
+
+async function stopRecording(): Promise<void> {
+  if (!synth.value || !isRecording.value) return
+  isRecording.value = false
+  stopTicker()
 
   try {
-    const blob =
-      recordFormat === 'wav'
-        ? encodeWav(result.left, result.right, result.sampleRate)
-        : await encodeMp3(result.left, result.right, result.sampleRate, 192)
-    const ext = recordFormat
+    let blob: Blob
+    let ext: string
+
+    if (recordFormat === 'ogg') {
+      if (!mediaRecorder || !mediaStreamDest) return
+      const rec = mediaRecorder
+      const dest = mediaStreamDest
+      await new Promise<void>((resolve) => {
+        rec.onstop = () => resolve()
+        rec.stop()
+      })
+      synth.value.master.disconnect(dest)
+      mediaRecorder = null
+      mediaStreamDest = null
+      if (mediaChunks.length === 0) return
+      blob = new Blob(mediaChunks, { type: mediaMime })
+      ext = extFromMime(mediaMime)
+      mediaChunks = []
+    } else {
+      const result = synth.value.recorder.stop()
+      if (!result || result.left.length === 0) return
+      if (recordFormat === 'wav') {
+        blob = encodeWav(result.left, result.right, result.sampleRate)
+        ext = 'wav'
+      } else {
+        blob = await encodeMp3(result.left, result.right, result.sampleRate, 192)
+        ext = 'mp3'
+      }
+    }
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, '_').slice(0, 19)
     const fname = `synod-${timestamp}.${ext}`
     const url = URL.createObjectURL(blob)

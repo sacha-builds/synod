@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-export type RecordFormat = 'wav' | 'mp3'
+export type RecordFormat = 'wav' | 'mp3' | 'ogg'
 
 const props = defineProps<{
   isRecording: boolean
@@ -85,6 +85,15 @@ function onClick() {
           title="MP3 at 192 kbps — encoder loads on first use"
         >
           MP3
+        </button>
+        <button
+          class="fmt"
+          :class="{ active: format === 'ogg' }"
+          :disabled="isRecording"
+          @click="format = 'ogg'"
+          title="Compressed OGG/WebM/M4A (browser-native codec; container depends on browser)"
+        >
+          OGG
         </button>
       </div>
     </div>
