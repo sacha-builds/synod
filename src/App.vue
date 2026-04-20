@@ -9,6 +9,7 @@ import Oscilloscope from './components/Oscilloscope.vue'
 import KeyboardInput from './components/KeyboardInput.vue'
 import Knob from './components/Knob.vue'
 import VoicePanel from './components/VoicePanel.vue'
+import RandomizePanel from './components/RandomizePanel.vue'
 import { useMidi } from './composables/useMidi'
 
 const patch = reactive(defaultPatch())
@@ -256,6 +257,10 @@ onBeforeUnmount(() => {
 
     <div class="layout-wrap" :class="{ 'fade-up': canScrollUp, 'fade-down': canScrollDown }">
       <main class="layout" ref="layoutRef" @scroll="updateScroll">
+        <section class="randomize-section">
+          <RandomizePanel :patch="patch" />
+        </section>
+
         <details class="oscillators panel" open>
           <summary class="panel-title">
             <span class="chevron">▼</span>
@@ -540,6 +545,7 @@ onBeforeUnmount(() => {
 @media (max-width: 899px) {
   .layout {
     grid-template-areas:
+      'rand'
       'scope'
       'osc'
       'voice'
@@ -553,11 +559,15 @@ onBeforeUnmount(() => {
   .layout {
     grid-template-columns: 1.35fr 1fr;
     grid-template-areas:
+      'rand   rand'
       'osc    scope'
       'osc    voice'
       'ampenv filtenv'
       'filter filter2';
   }
+}
+.randomize-section {
+  grid-area: rand;
 }
 .oscillators {
   grid-area: osc;
