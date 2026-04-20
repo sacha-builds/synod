@@ -46,6 +46,11 @@ function stopNote(note: number) {
   synth.value?.noteOff(note)
 }
 
+function panic() {
+  synth.value?.panic()
+  activeNotes.clear()
+}
+
 const midi = useMidi({
   noteOn: (note, velocity) => startNote(note, velocity),
   noteOff: (note) => stopNote(note),
@@ -116,15 +121,21 @@ onMounted(() => {
           <span>{{ midiLabel }}</span>
         </div>
       </div>
-      <div class="master">
-        <Knob
-          v-model="patch.masterGain"
-          :min="0"
-          :max="1"
-          label="MASTER"
-          :format="(v) => (v * 100).toFixed(0) + '%'"
-          :size="44"
-        />
+      <div class="topbar-right">
+        <button class="panic" @click="panic" title="Cut all sound immediately">
+          <span class="panic-icon">■</span>
+          PANIC
+        </button>
+        <div class="master">
+          <Knob
+            v-model="patch.masterGain"
+            :min="0"
+            :max="1"
+            label="MASTER"
+            :format="(v) => (v * 100).toFixed(0) + '%'"
+            :size="44"
+          />
+        </div>
       </div>
     </header>
 
@@ -229,6 +240,38 @@ onMounted(() => {
 }
 .status.midi {
   cursor: help;
+}
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.panic {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #f6b3b0;
+  background: #2a1010;
+  border: 1px solid #6a2020;
+  border-radius: 4px;
+  transition: all 100ms var(--ease-out);
+}
+.panic:hover {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 0 10px rgba(217, 83, 79, 0.5);
+}
+.panic:active {
+  transform: scale(0.97);
+}
+.panic-icon {
+  font-size: 9px;
+  line-height: 1;
 }
 .master {
   min-width: 60px;

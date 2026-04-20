@@ -76,6 +76,19 @@ export class Synth {
     this.voices.clear()
   }
 
+  /** Instant silence — for runaway notes, feedback, stuck MIDI, etc.
+   *  Briefly drops master gain to zero to avoid clicks, stops every voice. */
+  panic(): void {
+    const now = this.ctx.currentTime
+    const target = this.patch.masterGain
+    this.master.gain.cancelScheduledValues(now)
+    this.master.gain.setValueAtTime(0, now)
+    for (const voice of this.voices.values()) voice.hardStop()
+    this.voices.clear()
+    this.master.gain.setValueAtTime(0, now + 0.03)
+    this.master.gain.linearRampToValueAtTime(target, now + 0.08)
+  }
+
   private scheduleCleanup(): void {
     if (this.cleanupTimer !== null) return
     this.cleanupTimer = window.setTimeout(() => {

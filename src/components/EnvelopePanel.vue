@@ -22,7 +22,11 @@ const envPath = computed(() => {
   return `M 0 ${h} L ${ax} 0 L ${dx} ${sy} L ${sx} ${sy} L ${rx} ${h}`
 })
 
-const fmtTime = (v: number) => (v < 1 ? (v * 1000).toFixed(0) + 'ms' : v.toFixed(2) + 's')
+const fmtTime = (v: number) => {
+  if (v < 1) return (v * 1000).toFixed(0) + 'ms'
+  if (v < 10) return v.toFixed(2) + 's'
+  return v.toFixed(1) + 's'
+}
 </script>
 
 <template>
@@ -40,10 +44,10 @@ const fmtTime = (v: number) => (v < 1 ? (v * 1000).toFixed(0) + 'ms' : v.toFixed
       </svg>
     </div>
     <div class="knobs">
-      <Knob v-model="env.attack" :min="0.001" :max="5" curve="exp" label="ATTACK" :format="fmtTime" />
-      <Knob v-model="env.decay" :min="0.001" :max="5" curve="exp" label="DECAY" :format="fmtTime" />
+      <Knob v-model="env.attack" :min="0.001" :max="20" curve="exp" label="ATTACK" :format="fmtTime" />
+      <Knob v-model="env.decay" :min="0.001" :max="20" curve="exp" label="DECAY" :format="fmtTime" />
       <Knob v-model="env.sustain" :min="0" :max="1" label="SUSTAIN" :format="(v) => (v * 100).toFixed(0) + '%'" />
-      <Knob v-model="env.release" :min="0.001" :max="8" curve="exp" label="RELEASE" :format="fmtTime" />
+      <Knob v-model="env.release" :min="0.001" :max="20" curve="exp" label="RELEASE" :format="fmtTime" />
     </div>
   </div>
 </template>

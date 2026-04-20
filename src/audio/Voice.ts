@@ -110,6 +110,20 @@ export class Voice {
     })
   }
 
+  /** Instant stop — bypasses any pending release envelope. */
+  hardStop(): void {
+    const now = this.ctx.currentTime
+    this.amp.gain.cancelScheduledValues(now)
+    this.amp.gain.setValueAtTime(0, now)
+    this.oscillators.forEach((o) => {
+      try {
+        o.stop(now)
+      } catch {
+        /* already stopped */
+      }
+    })
+  }
+
   isDone(now: number): boolean {
     return this.released && now >= this.endTime
   }
