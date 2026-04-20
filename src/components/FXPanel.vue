@@ -98,11 +98,21 @@ const fmtPct = (v: number) => (v * 100).toFixed(0) + '%'
   display: inline-flex;
   align-items: center;
   cursor: pointer;
+  /* Contain the absolutely-positioned hidden checkbox so it can't escape
+     the toggle's box. Without this, the input's containing block bubbles
+     up to the initial containing block which, under narrow viewports with
+     flex-wrap, was apparently enough to cause a layout pathology. */
+  position: relative;
 }
 .enable-toggle input {
   position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
   pointer-events: none;
+  margin: 0;
 }
 .enable-pill {
   font-family: var(--font-mono);

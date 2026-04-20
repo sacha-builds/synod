@@ -71,11 +71,17 @@ const types: { id: FilterType; label: string; path: string }[] = [
   display: inline-flex;
   align-items: center;
   cursor: pointer;
+  position: relative;
 }
 .enable-toggle input {
   position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
   pointer-events: none;
+  margin: 0;
 }
 .enable-pill {
   font-family: var(--font-mono);
