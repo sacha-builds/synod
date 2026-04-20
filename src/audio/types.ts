@@ -40,6 +40,29 @@ export interface FilterPatch {
   envAmount: number
 }
 
+export interface ReverbPatch {
+  enabled: boolean
+  /** Decay length in seconds (0.3..8). */
+  decay: number
+  /** Wet mix 0..1. */
+  mix: number
+}
+
+export interface DelayPatch {
+  enabled: boolean
+  /** Delay time in seconds (0.01..2). */
+  time: number
+  /** Feedback 0..0.95 (bounded below 1 to avoid runaway). */
+  feedback: number
+  /** Wet mix 0..1. */
+  mix: number
+}
+
+export interface FXPatch {
+  reverb: ReverbPatch
+  delay: DelayPatch
+}
+
 export interface SynthPatch {
   oscillators: [OscillatorPatch, OscillatorPatch, OscillatorPatch]
   /** Master gain 0..1 */
@@ -56,6 +79,7 @@ export interface SynthPatch {
   notePriority: NotePriority
   /** Mono only. When true, new notes played while another is held don't retrigger envelopes. */
   legato: boolean
+  fx: FXPatch
 }
 
 export function defaultPatch(): SynthPatch {
@@ -75,6 +99,10 @@ export function defaultPatch(): SynthPatch {
     glide: 0,
     notePriority: 'last',
     legato: false,
+    fx: {
+      reverb: { enabled: false, decay: 2.0, mix: 0.3 },
+      delay: { enabled: false, time: 0.3, feedback: 0.35, mix: 0.3 },
+    },
   }
 }
 

@@ -10,6 +10,7 @@ import KeyboardInput from './components/KeyboardInput.vue'
 import Knob from './components/Knob.vue'
 import VoicePanel from './components/VoicePanel.vue'
 import RandomizePanel from './components/RandomizePanel.vue'
+import FXPanel from './components/FXPanel.vue'
 import { useMidi } from './composables/useMidi'
 
 const patch = reactive(defaultPatch())
@@ -109,6 +110,15 @@ watch(
   [() => patch.ampEnvelope.release, () => patch.filterEnvelope.release],
   () => synth.value?.rescheduleReleases(),
 )
+
+// FX — live-update reverb + delay on every param change.
+watch(() => patch.fx.reverb.enabled, (v) => synth.value?.setReverbEnabled(v))
+watch(() => patch.fx.reverb.mix, (v) => synth.value?.setReverbMix(v))
+watch(() => patch.fx.reverb.decay, (v) => synth.value?.setReverbDecay(v))
+watch(() => patch.fx.delay.enabled, (v) => synth.value?.setDelayEnabled(v))
+watch(() => patch.fx.delay.mix, (v) => synth.value?.setDelayMix(v))
+watch(() => patch.fx.delay.time, (v) => synth.value?.setDelayTime(v))
+watch(() => patch.fx.delay.feedback, (v) => synth.value?.setDelayFeedback(v))
 
 // --- Mobile sound hint ---
 // Browsers can't read the hardware mute switch or system volume. The best we
@@ -314,6 +324,10 @@ onBeforeUnmount(() => {
 
         <section class="voice-section">
           <VoicePanel :patch="patch" />
+        </section>
+
+        <section class="fx-section">
+          <FXPanel :patch="patch" />
         </section>
       </main>
     </div>
@@ -552,6 +566,7 @@ onBeforeUnmount(() => {
       'filtenv'
       'filter'
       'filter2'
+      'fx'
       'rand';
   }
 }
@@ -563,11 +578,15 @@ onBeforeUnmount(() => {
       'osc    voice'
       'ampenv filtenv'
       'filter filter2'
+      'fx     fx'
       'rand   rand';
   }
 }
 .randomize-section {
   grid-area: rand;
+}
+.fx-section {
+  grid-area: fx;
 }
 .oscillators {
   grid-area: osc;

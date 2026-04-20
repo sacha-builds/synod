@@ -2,6 +2,22 @@ import { Voice } from './Voice'
 import type { FilterType, SynthPatch, VoiceMode } from './types'
 import { defaultPatch } from './types'
 
+/** Generate a stereo impulse response of exponentially-decaying white noise.
+ *  Simple algorithmic reverb tail — not a real room IR, but cheap and sounds
+ *  like a plate/hall depending on decay. */
+function buildReverbIR(ctx: AudioContext, seconds: number): AudioBuffer {
+  const len = Math.max(1, Math.floor(ctx.sampleRate * seconds))
+  const buffer = ctx.createBuffer(2, len, ctx.sampleRate)
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buffer.getChannelData(ch)
+    for (let i = 0; i < len; i++) {
+      const t = i / len
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 3)
+    }
+  }
+  return buffer
+}
+
 /**
  * Polyphonic / monophonic synth. Holds the shared AudioContext, master
  * gain, and an analyser for the oscilloscope. Dispatches note events to
@@ -9,9 +25,18 @@ import { defaultPatch } from './types'
  */
 export class Synth {
   ctx: AudioContext
+  /** Bus all voices connect to. Splits into dry + reverb send + delay send. */
+  voiceBus: GainNode
   master: GainNode
   analyser: AnalyserNode
   patch: SynthPatch
+
+  // FX: parallel sends from voiceBus. Dry always on; wet gains control mix.
+  private reverb: ConvolverNode
+  private reverbWet: GainNode
+  private delay: DelayNode
+  private delayFeedback: GainNode
+  private delayWet: GainNode
 
   // Poly state
   private polyVoices = new Map<number, Voice>()
@@ -40,6 +65,35 @@ export class Synth {
 
     this.master = this.ctx.createGain()
     this.master.gain.value = patch.masterGain
+
+    this.voiceBus = this.ctx.createGain()
+    this.voiceBus.gain.value = 1
+
+    // Reverb send: voiceBus → reverb → reverbWet → master
+    this.reverb = this.ctx.createConvolver()
+    this.reverb.buffer = buildReverbIR(this.ctx, patch.fx.reverb.decay)
+    this.reverbWet = this.ctx.createGain()
+    this.reverbWet.gain.value = patch.fx.reverb.enabled ? patch.fx.reverb.mix : 0
+
+    // Delay send: voiceBus → delay → delayWet → master (delay → delayFeedback → delay)
+    this.delay = this.ctx.createDelay(5)
+    this.delay.delayTime.value = patch.fx.delay.time
+    this.delayFeedback = this.ctx.createGain()
+    this.delayFeedback.gain.value = patch.fx.delay.feedback
+    this.delay.connect(this.delayFeedback)
+    this.delayFeedback.connect(this.delay)
+    this.delayWet = this.ctx.createGain()
+    this.delayWet.gain.value = patch.fx.delay.enabled ? patch.fx.delay.mix : 0
+
+    // Wiring
+    this.voiceBus.connect(this.master) // dry
+    this.voiceBus.connect(this.reverb)
+    this.reverb.connect(this.reverbWet)
+    this.reverbWet.connect(this.master)
+    this.voiceBus.connect(this.delay)
+    this.delay.connect(this.delayWet)
+    this.delayWet.connect(this.master)
+
     this.master.connect(this.analyser)
     this.analyser.connect(this.ctx.destination)
   }
@@ -71,6 +125,42 @@ export class Synth {
   rescheduleReleases(): void {
     this.sweepDoneVoices()
     for (const voice of this.allVoices) voice.rescheduleRelease()
+  }
+
+  // --- FX setters ---
+  private smooth(param: AudioParam, target: number): void {
+    param.setTargetAtTime(target, this.ctx.currentTime, 0.02)
+  }
+
+  setReverbEnabled(v: boolean): void {
+    this.patch.fx.reverb.enabled = v
+    this.smooth(this.reverbWet.gain, v ? this.patch.fx.reverb.mix : 0)
+  }
+  setReverbMix(v: number): void {
+    this.patch.fx.reverb.mix = v
+    if (this.patch.fx.reverb.enabled) this.smooth(this.reverbWet.gain, v)
+  }
+  setReverbDecay(v: number): void {
+    this.patch.fx.reverb.decay = v
+    // Rebuild the IR. Cheap enough to do per-change (white-noise exp decay).
+    this.reverb.buffer = buildReverbIR(this.ctx, v)
+  }
+
+  setDelayEnabled(v: boolean): void {
+    this.patch.fx.delay.enabled = v
+    this.smooth(this.delayWet.gain, v ? this.patch.fx.delay.mix : 0)
+  }
+  setDelayTime(v: number): void {
+    this.patch.fx.delay.time = v
+    this.smooth(this.delay.delayTime, v)
+  }
+  setDelayFeedback(v: number): void {
+    this.patch.fx.delay.feedback = v
+    this.smooth(this.delayFeedback.gain, v)
+  }
+  setDelayMix(v: number): void {
+    this.patch.fx.delay.mix = v
+    if (this.patch.fx.delay.enabled) this.smooth(this.delayWet.gain, v)
   }
 
   private sweepDoneVoices(): void {
@@ -122,8 +212,9 @@ export class Synth {
 
   /** Hard-kill everything currently making sound, including voices that are
    *  only still audible because they're playing out a release tail after
-   *  their note-off already fired. Briefly dips master gain to absorb any
-   *  click from abrupt cutoff. */
+   *  their note-off already fired. Also flushes the delay feedback loop so
+   *  an echoing tail doesn't survive the panic. Briefly dips master gain
+   *  to absorb any click from abrupt cutoff. */
   panic(): void {
     const now = this.ctx.currentTime
     const target = this.patch.masterGain
@@ -135,6 +226,13 @@ export class Synth {
     this.polyVoices.clear()
     this.monoVoice = null
     this.heldNotes = []
+
+    // Flush delay feedback so an in-flight echo tail dies instead of
+    // playing itself out after master restores.
+    this.delayFeedback.gain.cancelScheduledValues(now)
+    this.delayFeedback.gain.setValueAtTime(0, now)
+    this.delayFeedback.gain.setValueAtTime(0, now + 0.1)
+    this.delayFeedback.gain.setTargetAtTime(this.patch.fx.delay.feedback, now + 0.15, 0.02)
 
     this.master.gain.setValueAtTime(0, now + 0.03)
     this.master.gain.linearRampToValueAtTime(target, now + 0.08)
@@ -149,7 +247,7 @@ export class Synth {
       existing.stop()
       // existing stays in allVoices until its release tail finishes
     }
-    const voice = new Voice(this.ctx, this.master, note, velocity, this.patch)
+    const voice = new Voice(this.ctx, this.voiceBus, note, velocity, this.patch)
     this.polyVoices.set(note, voice)
     this.allVoices.add(voice)
   }
@@ -190,7 +288,7 @@ export class Synth {
 
     if (!this.monoVoice || this.monoVoice.isDone(this.ctx.currentTime)) {
       // No active voice — create one on the target note
-      const voice = new Voice(this.ctx, this.master, active, velocity, this.patch)
+      const voice = new Voice(this.ctx, this.voiceBus, active, velocity, this.patch)
       this.monoVoice = voice
       this.allVoices.add(voice)
       return
