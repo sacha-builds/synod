@@ -37,8 +37,14 @@ export class Synth {
     this.analyser.connect(this.ctx.destination)
   }
 
-  async resume(): Promise<void> {
-    if (this.ctx.state === 'suspended') await this.ctx.resume()
+  /** Resume the AudioContext. Fire-and-forget so callers can invoke from a
+   *  user gesture handler without awaiting — critical on iOS Safari, which
+   *  drops the user-gesture context across awaits and refuses to unlock
+   *  audio if resume is promise-chained from a gesture. */
+  resume(): void {
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {})
+    }
   }
 
   setMasterGain(v: number): void {

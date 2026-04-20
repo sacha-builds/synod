@@ -18,15 +18,11 @@ const started = ref(false)
 /** All currently-held notes, across all input sources (MIDI, QWERTY, click). */
 const activeNotes = reactive(new Set<number>())
 
-async function start() {
-  if (synth.value) {
-    await synth.value.resume()
-    started.value = true
-    return
-  }
-  const s = new Synth(patch)
-  await s.resume()
-  synth.value = s
+/** Create (if needed) and resume the synth synchronously from a user gesture.
+ *  Must stay synchronous — iOS Safari drops the gesture across awaits. */
+function start(): void {
+  if (!synth.value) synth.value = new Synth(patch)
+  synth.value.resume()
   started.value = true
 }
 
@@ -35,11 +31,8 @@ async function start() {
 function startNote(note: number, velocity: number) {
   if (activeNotes.has(note)) return
   activeNotes.add(note)
-  if (!synth.value) {
-    start().then(() => synth.value?.noteOn(note, velocity))
-    return
-  }
-  synth.value.noteOn(note, velocity)
+  if (!synth.value) start()
+  synth.value!.noteOn(note, velocity)
 }
 function stopNote(note: number) {
   // Don't guard on activeNotes.has — always propagate noteOff in case the two
@@ -190,11 +183,11 @@ onMounted(() => {
         <VoicePanel :patch="patch" />
       </section>
 
-      <section class="kbd-section panel">
-        <h3 class="panel-title">Keyboard</h3>
-        <KeyboardInput :active-notes="activeNotes" @note-on="startNote" @note-off="stopNote" />
-      </section>
     </main>
+
+    <footer class="kbd-footer">
+      <KeyboardInput :active-notes="activeNotes" @note-on="startNote" @note-off="stopNote" />
+    </footer>
   </div>
 </template>
 
@@ -202,7 +195,9 @@ onMounted(() => {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
+  /* dynamic viewport unit — accounts for mobile browser chrome appearing/disappearing */
+  height: 100dvh;
   background: linear-gradient(180deg, var(--bg-0) 0%, #070708 100%);
 }
 .topbar {
@@ -308,7 +303,9 @@ onMounted(() => {
 }
 .layout {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   gap: 12px;
   padding: 12px;
@@ -318,8 +315,7 @@ onMounted(() => {
     'osc'
     'filter'
     'env'
-    'voice'
-    'kbd';
+    'voice';
 }
 @media (min-width: 980px) {
   .layout {
@@ -328,8 +324,7 @@ onMounted(() => {
       'scope scope'
       'osc env'
       'filter env'
-      'voice voice'
-      'kbd kbd';
+      'voice voice';
   }
 }
 .scope-section {
@@ -355,7 +350,35 @@ onMounted(() => {
 .voice-section {
   grid-area: voice;
 }
-.kbd-section {
-  grid-area: kbd;
+
+.kbd-footer {
+  flex-shrink: 0;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  /* iPhone home-indicator safe area */
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Mobile topbar — wrap + compact */
+@media (max-width: 640px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .version {
+    display: none;
+  }
+  .status-group {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    font-size: 9px;
+  }
+  .panic {
+    padding: 6px 10px;
+    font-size: 9px;
+  }
 }
 </style>
