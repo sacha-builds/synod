@@ -111,14 +111,26 @@ watch(
   () => synth.value?.rescheduleReleases(),
 )
 
+/** Run a synth method inside a try/catch so a single bad call can't crash
+ *  Vue and unmount the UI. Logs to console instead. Useful during
+ *  development when class methods might be out of sync after an HMR cycle. */
+function safe<T>(label: string, fn: () => T): T | undefined {
+  try {
+    return fn()
+  } catch (err) {
+    console.error(`[synod] ${label} threw:`, err)
+    return undefined
+  }
+}
+
 // FX — live-update reverb + delay on every param change.
-watch(() => patch.fx.reverb.enabled, (v) => synth.value?.setReverbEnabled(v))
-watch(() => patch.fx.reverb.mix, (v) => synth.value?.setReverbMix(v))
-watch(() => patch.fx.reverb.decay, (v) => synth.value?.setReverbDecay(v))
-watch(() => patch.fx.delay.enabled, (v) => synth.value?.setDelayEnabled(v))
-watch(() => patch.fx.delay.mix, (v) => synth.value?.setDelayMix(v))
-watch(() => patch.fx.delay.time, (v) => synth.value?.setDelayTime(v))
-watch(() => patch.fx.delay.feedback, (v) => synth.value?.setDelayFeedback(v))
+watch(() => patch.fx.reverb.enabled, (v) => safe('setReverbEnabled', () => synth.value?.setReverbEnabled(v)))
+watch(() => patch.fx.reverb.mix, (v) => safe('setReverbMix', () => synth.value?.setReverbMix(v)))
+watch(() => patch.fx.reverb.decay, (v) => safe('setReverbDecay', () => synth.value?.setReverbDecay(v)))
+watch(() => patch.fx.delay.enabled, (v) => safe('setDelayEnabled', () => synth.value?.setDelayEnabled(v)))
+watch(() => patch.fx.delay.mix, (v) => safe('setDelayMix', () => synth.value?.setDelayMix(v)))
+watch(() => patch.fx.delay.time, (v) => safe('setDelayTime', () => synth.value?.setDelayTime(v)))
+watch(() => patch.fx.delay.feedback, (v) => safe('setDelayFeedback', () => synth.value?.setDelayFeedback(v)))
 
 // --- Mobile sound hint ---
 // Browsers can't read the hardware mute switch or system volume. The best we
