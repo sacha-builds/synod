@@ -19,6 +19,13 @@ export class Synth {
   // Mono state
   private monoVoice: Voice | null = null
 
+  /** All voices the synth has ever spawned that haven't finished their
+   *  release tail yet. Includes voices that have been removed from
+   *  polyVoices/monoVoice after noteOff but are still making sound.
+   *  Panic iterates this to actually silence those tails; release
+   *  param changes iterate this to reschedule in-flight tails. */
+  private allVoices = new Set<Voice>()
+
   // Shared state — the stack of currently-held notes (latest-pressed last).
   // Used for mono note priority and for all-notes-off bookkeeping.
   private heldNotes: number[] = []
@@ -57,6 +64,20 @@ export class Synth {
     else this.patch.filter2.type = type
     for (const voice of this.polyVoices.values()) voice.setFilterType(type, which)
     this.monoVoice?.setFilterType(type, which)
+  }
+
+  /** Reschedule the in-flight release of any currently-releasing voices.
+   *  Called when the user changes the amp or filter envelope release knob. */
+  rescheduleReleases(): void {
+    this.sweepDoneVoices()
+    for (const voice of this.allVoices) voice.rescheduleRelease()
+  }
+
+  private sweepDoneVoices(): void {
+    const now = this.ctx.currentTime
+    for (const v of this.allVoices) {
+      if (v.isDone(now)) this.allVoices.delete(v)
+    }
   }
 
   /** Switch voice mode. Gracefully releases anything currently playing in the
@@ -99,29 +120,38 @@ export class Synth {
     this.heldNotes = []
   }
 
+  /** Hard-kill everything currently making sound, including voices that are
+   *  only still audible because they're playing out a release tail after
+   *  their note-off already fired. Briefly dips master gain to absorb any
+   *  click from abrupt cutoff. */
   panic(): void {
     const now = this.ctx.currentTime
     const target = this.patch.masterGain
     this.master.gain.cancelScheduledValues(now)
     this.master.gain.setValueAtTime(0, now)
-    for (const voice of this.polyVoices.values()) voice.hardStop()
+
+    for (const voice of this.allVoices) voice.hardStop()
+    this.allVoices.clear()
     this.polyVoices.clear()
-    this.monoVoice?.hardStop()
     this.monoVoice = null
     this.heldNotes = []
+
     this.master.gain.setValueAtTime(0, now + 0.03)
     this.master.gain.linearRampToValueAtTime(target, now + 0.08)
   }
 
   // --- Poly ---
   private noteOnPoly(note: number, velocity: number): void {
+    this.sweepDoneVoices()
     const existing = this.polyVoices.get(note)
     if (existing) {
       existing.release(this.patch)
       existing.stop()
+      // existing stays in allVoices until its release tail finishes
     }
     const voice = new Voice(this.ctx, this.master, note, velocity, this.patch)
     this.polyVoices.set(note, voice)
+    this.allVoices.add(voice)
   }
 
   private noteOffPoly(note: number): void {
@@ -130,6 +160,7 @@ export class Synth {
     voice.release(this.patch)
     voice.stop()
     this.polyVoices.delete(note)
+    // Kept in allVoices until release tail finishes
   }
 
   // --- Mono ---
@@ -159,7 +190,9 @@ export class Synth {
 
     if (!this.monoVoice || this.monoVoice.isDone(this.ctx.currentTime)) {
       // No active voice — create one on the target note
-      this.monoVoice = new Voice(this.ctx, this.master, active, velocity, this.patch)
+      const voice = new Voice(this.ctx, this.master, active, velocity, this.patch)
+      this.monoVoice = voice
+      this.allVoices.add(voice)
       return
     }
 

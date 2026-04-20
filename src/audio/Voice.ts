@@ -28,7 +28,9 @@ export class Voice {
 
   /** Current MIDI note. Mutable in mono mode. */
   note: number
-  private released = false
+  /** True once release() has been called. Exposed so the synth can
+   *  reschedule the in-flight release when envelope params change. */
+  released = false
   private endTime = Infinity
 
   constructor(ctx: AudioContext, output: AudioNode, note: number, velocity: number, patch: SynthPatch) {
@@ -175,6 +177,38 @@ export class Voice {
     filter.frequency.cancelScheduledValues(now)
     filter.frequency.setValueAtTime(cur, now)
     filter.frequency.linearRampToValueAtTime(fp.cutoff, now + releaseSec)
+  }
+
+  /** Reschedule the in-progress release from "now" using the current envelope
+   *  params. No-op if the voice isn't currently releasing. Lets the user
+   *  shorten (or extend) the release of a sustaining tail by turning the
+   *  release knob mid-flight. */
+  rescheduleRelease(): void {
+    if (!this.released) return
+    const now = this.ctx.currentTime
+    const patch = this.patchRef
+    const a = patch.ampEnvelope
+    const f = patch.filterEnvelope
+
+    const curAmp = this.amp.gain.value
+    this.amp.gain.cancelScheduledValues(now)
+    this.amp.gain.setValueAtTime(curAmp, now)
+    this.amp.gain.linearRampToValueAtTime(0, now + a.release)
+
+    this.releaseFilter(this.filter, patch.filter, now, f.release)
+    if (this.filter2Active) {
+      this.releaseFilter(this.filter2, patch.filter2, now, f.release)
+    }
+
+    const newEnd = now + Math.max(a.release, f.release) + 0.05
+    this.endTime = newEnd
+    this.oscillators.forEach((o) => {
+      try {
+        o.stop(newEnd)
+      } catch {
+        /* already stopped */
+      }
+    })
   }
 
   setFilterType(type: BiquadFilterType, which: 1 | 2 = 1): void {

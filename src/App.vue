@@ -100,6 +100,13 @@ watch(
   (m) => synth.value?.setVoiceMode(m),
 )
 
+// Release knobs (amp + filter env) live-update any currently-releasing
+// voices — so turning release down mid-tail actually shortens the tail.
+watch(
+  [() => patch.ampEnvelope.release, () => patch.filterEnvelope.release],
+  () => synth.value?.rescheduleReleases(),
+)
+
 // --- Mobile sound hint ---
 // Browsers can't read the hardware mute switch or system volume. The best we
 // can do is show a proactive dismissible hint on first audio unlock for
