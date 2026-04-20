@@ -351,6 +351,19 @@ watch(
   (v) => synth.value?.setMasterGain(v),
 )
 
+// When we drop back to Single, only Part A is audible. Force the UI to
+// edit Part A too — otherwise the user is adjusting a part they can't hear.
+// Part B's patch data is preserved untouched, so switching back to Layer /
+// Split restores exactly what was there.
+watch(
+  () => patch.bimode,
+  (mode) => {
+    if (mode === 'single' && patch.activePart !== 0) {
+      patch.activePart = 0
+    }
+  },
+)
+
 // Per-part watches — the same cheap live-updates apply to each part.
 // Watch each side individually so switching activePart doesn't fire a
 // stale update on the part that didn't actually change.
