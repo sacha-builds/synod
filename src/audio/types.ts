@@ -63,6 +63,40 @@ export interface FXPatch {
   delay: DelayPatch
 }
 
+export type ArpMode = 'up' | 'down' | 'updown' | 'order' | 'random' | 'chord'
+export type ArpRate = '1/4' | '1/8' | '1/16' | '1/32' | '1/8t' | '1/16t' | '1/8d' | '1/16d'
+
+export interface ArpStep {
+  /** Whether this step plays a note (false = rest) */
+  active: boolean
+  /** Octave offset applied on top of mode-chosen octave (-2..+2) */
+  octave: number
+  /** Velocity multiplier — used for accents (0.3..1.5) */
+  velocityMul: number
+}
+
+export interface ArpPatch {
+  enabled: boolean
+  mode: ArpMode
+  rate: ArpRate
+  /** Tempo in beats per minute (30..240) */
+  bpm: number
+  /** Note-on to note-off as a fraction of step duration (0.05..1) */
+  gate: number
+  /** 0 = straight, >0 delays every other step (0..0.5 internal; UI shows %) */
+  swing: number
+  /** How many octaves the arp spans (1..4) */
+  octaves: number
+  /** When true, released keys stay in the arp's held chord until latch is turned off
+   *  or a fresh chord is pressed after all physical keys have been released. */
+  latch: boolean
+  /** When true, use the step pattern to determine rests / accents / octave offsets. */
+  usePattern: boolean
+  /** How many steps of `pattern` to cycle through (1..16). */
+  patternLength: number
+  pattern: ArpStep[]
+}
+
 export interface SynthPatch {
   oscillators: [OscillatorPatch, OscillatorPatch, OscillatorPatch]
   /** Master gain 0..1 */
@@ -80,6 +114,7 @@ export interface SynthPatch {
   /** Mono only. When true, new notes played while another is held don't retrigger envelopes. */
   legato: boolean
   fx: FXPatch
+  arp: ArpPatch
 }
 
 export function defaultPatch(): SynthPatch {
@@ -102,6 +137,19 @@ export function defaultPatch(): SynthPatch {
     fx: {
       reverb: { enabled: false, decay: 2.0, mix: 0.3 },
       delay: { enabled: false, time: 0.3, feedback: 0.35, mix: 0.3 },
+    },
+    arp: {
+      enabled: false,
+      mode: 'up',
+      rate: '1/16',
+      bpm: 120,
+      gate: 0.7,
+      swing: 0,
+      octaves: 1,
+      latch: false,
+      usePattern: false,
+      patternLength: 8,
+      pattern: Array.from({ length: 16 }, () => ({ active: true, octave: 0, velocityMul: 1 })),
     },
   }
 }

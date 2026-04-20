@@ -178,22 +178,22 @@ export class Synth {
     this.patch.voiceMode = mode
   }
 
-  noteOn(note: number, velocity = 100): void {
+  noteOn(note: number, velocity = 100, startTime?: number): void {
     // Track in held stack regardless of mode — keeps panic/allNotesOff clean.
     const existingIdx = this.heldNotes.indexOf(note)
     if (existingIdx >= 0) this.heldNotes.splice(existingIdx, 1)
     this.heldNotes.push(note)
 
-    if (this.patch.voiceMode === 'mono') this.noteOnMono(note, velocity)
-    else this.noteOnPoly(note, velocity)
+    if (this.patch.voiceMode === 'mono') this.noteOnMono(note, velocity, startTime)
+    else this.noteOnPoly(note, velocity, startTime)
   }
 
-  noteOff(note: number): void {
+  noteOff(note: number, atTime?: number): void {
     const idx = this.heldNotes.indexOf(note)
     if (idx >= 0) this.heldNotes.splice(idx, 1)
 
-    if (this.patch.voiceMode === 'mono') this.noteOffMono(note)
-    else this.noteOffPoly(note)
+    if (this.patch.voiceMode === 'mono') this.noteOffMono(note, atTime)
+    else this.noteOffPoly(note, atTime)
   }
 
   allNotesOff(): void {
@@ -239,23 +239,23 @@ export class Synth {
   }
 
   // --- Poly ---
-  private noteOnPoly(note: number, velocity: number): void {
+  private noteOnPoly(note: number, velocity: number, startTime?: number): void {
     this.sweepDoneVoices()
     const existing = this.polyVoices.get(note)
     if (existing) {
-      existing.release(this.patch)
+      existing.release(this.patch, startTime)
       existing.stop()
       // existing stays in allVoices until its release tail finishes
     }
-    const voice = new Voice(this.ctx, this.voiceBus, note, velocity, this.patch)
+    const voice = new Voice(this.ctx, this.voiceBus, note, velocity, this.patch, startTime)
     this.polyVoices.set(note, voice)
     this.allVoices.add(voice)
   }
 
-  private noteOffPoly(note: number): void {
+  private noteOffPoly(note: number, atTime?: number): void {
     const voice = this.polyVoices.get(note)
     if (!voice) return
-    voice.release(this.patch)
+    voice.release(this.patch, atTime)
     voice.stop()
     this.polyVoices.delete(note)
     // Kept in allVoices until release tail finishes
@@ -275,44 +275,36 @@ export class Synth {
     }
   }
 
-  private noteOnMono(_note: number, velocity: number): void {
+  private noteOnMono(_note: number, velocity: number, startTime?: number): void {
     const active = this.pickPriorityNote()
     if (active === null) return
 
-    // Priority says "keep holding the one we're already on" — ignore
     if (this.monoVoice && !this.monoVoice.isDone(this.ctx.currentTime) && this.monoVoice.note === active) {
-      // Still retrigger if legato is off AND the incoming note was actually higher/lower
-      // priority (unusual but possible under low/high priority). Otherwise no-op.
       return
     }
 
     if (!this.monoVoice || this.monoVoice.isDone(this.ctx.currentTime)) {
-      // No active voice — create one on the target note
-      const voice = new Voice(this.ctx, this.voiceBus, active, velocity, this.patch)
+      const voice = new Voice(this.ctx, this.voiceBus, active, velocity, this.patch, startTime)
       this.monoVoice = voice
       this.allVoices.add(voice)
       return
     }
 
-    // Active voice playing a different note — glide to new note
     this.monoVoice.setNote(active, this.patch.glide)
     if (!this.patch.legato) this.monoVoice.retriggerEnvelopes()
   }
 
-  private noteOffMono(_note: number): void {
+  private noteOffMono(_note: number, atTime?: number): void {
     if (!this.monoVoice) return
     const next = this.pickPriorityNote()
     if (next === null) {
-      // No notes left — release envelope
-      this.monoVoice.release(this.patch)
+      this.monoVoice.release(this.patch, atTime)
       this.monoVoice.stop()
       this.monoVoice = null
       return
     }
     if (next !== this.monoVoice.note) {
-      // Fall back to another held note
       this.monoVoice.setNote(next, this.patch.glide)
-      // No retrigger on fall-back — it's a "the previous note resumed"
     }
   }
 }

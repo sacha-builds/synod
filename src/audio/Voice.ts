@@ -33,13 +33,20 @@ export class Voice {
   released = false
   private endTime = Infinity
 
-  constructor(ctx: AudioContext, output: AudioNode, note: number, velocity: number, patch: SynthPatch) {
+  constructor(
+    ctx: AudioContext,
+    output: AudioNode,
+    note: number,
+    velocity: number,
+    patch: SynthPatch,
+    startTime?: number,
+  ) {
     this.ctx = ctx
     this.output = output
     this.patchRef = patch
     this.note = note
 
-    const now = ctx.currentTime
+    const now = startTime ?? ctx.currentTime
     const baseFreq = midiToFrequency(note)
     const velGain = Math.max(0.05, velocity / 127)
 
@@ -151,10 +158,10 @@ export class Voice {
     this.scheduleEnvelopes(this.ctx.currentTime)
   }
 
-  release(patch: SynthPatch): number {
+  release(patch: SynthPatch, atTime?: number): number {
     if (this.released) return this.endTime
     this.released = true
-    const now = this.ctx.currentTime
+    const now = atTime ?? this.ctx.currentTime
     const a = patch.ampEnvelope
     const f = patch.filterEnvelope
 

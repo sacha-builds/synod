@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Synth } from './audio/Synth'
 import { defaultPatch } from './audio/types'
+import { restoreSynthPatch } from './audio/randomize'
 import OscillatorPanel from './components/OscillatorPanel.vue'
 import EnvelopePanel from './components/EnvelopePanel.vue'
 import FilterPanel from './components/FilterPanel.vue'
@@ -11,43 +12,78 @@ import Knob from './components/Knob.vue'
 import VoicePanel from './components/VoicePanel.vue'
 import RandomizePanel from './components/RandomizePanel.vue'
 import FXPanel from './components/FXPanel.vue'
+import ArpPanel from './components/ArpPanel.vue'
+import { Arp } from './audio/Arp'
 import { useMidi } from './composables/useMidi'
 
 const patch = reactive(defaultPatch())
 const synth = shallowRef<Synth | null>(null)
+const arp = shallowRef<Arp | null>(null)
 const started = ref(false)
 
-/** All currently-held notes, across all input sources (MIDI, QWERTY, click). */
+/** Notes currently sounding (from any source) — what the keyboard highlights. */
 const activeNotes = reactive(new Set<number>())
+/** Keys the user is physically holding down — used to detect "all released"
+ *  transitions when the arp is in latch mode. */
+const physicalHeld = reactive(new Set<number>())
 
 /** Create (if needed) and resume the synth synchronously from a user gesture.
  *  Must stay synchronous — iOS Safari drops the gesture across awaits. */
 function start(): void {
-  if (!synth.value) synth.value = new Synth(patch)
+  if (!synth.value) {
+    const s = new Synth(patch)
+    synth.value = s
+    // Arp drives the synth directly via its callbacks.
+    arp.value = new Arp(s.ctx, patch.arp, {
+      noteOn: (note, velocity) => {
+        if (!synth.value) return
+        activeNotes.add(note)
+        synth.value.noteOn(note, velocity)
+      },
+      noteOff: (note) => {
+        activeNotes.delete(note)
+        synth.value?.noteOff(note)
+      },
+    })
+  }
   synth.value.resume()
   started.value = true
 }
 
-/** Note-on from any source. Dedups so repeat triggers from different sources
- *  don't stack voices. */
+/** Note-on from any source (physical input: MIDI, QWERTY, click). */
 function startNote(note: number, velocity: number) {
-  if (activeNotes.has(note)) return
-  activeNotes.add(note)
+  if (physicalHeld.has(note)) return
+  physicalHeld.add(note)
   if (!synth.value) start()
-  synth.value!.noteOn(note, velocity)
+  if (patch.arp.enabled && arp.value) {
+    arp.value.addHeldNote(note, velocity)
+  } else {
+    if (!activeNotes.has(note)) activeNotes.add(note)
+    synth.value!.noteOn(note, velocity)
+  }
 }
 function stopNote(note: number) {
-  // Don't guard on activeNotes.has — always propagate noteOff in case the two
-  // drifted out of sync (lost MIDI message, focus loss mid-note, etc). The
-  // synth is already idempotent on unknown notes.
-  activeNotes.delete(note)
-  synth.value?.noteOff(note)
+  physicalHeld.delete(note)
+  if (patch.arp.enabled && arp.value) {
+    if (patch.arp.latch) {
+      // Keep in the arp's held chord; if all physical keys are now released,
+      // mark that the next press starts a fresh chord.
+      if (physicalHeld.size === 0) arp.value.markLatchReset()
+    } else {
+      arp.value.removeHeldNote(note)
+    }
+  } else {
+    activeNotes.delete(note)
+    synth.value?.noteOff(note)
+  }
 }
 
 /** Gently release every held note. Used when the window loses focus — key-up
  *  events stop firing during blur, so without this, any QWERTY-held notes
  *  would sustain indefinitely. */
 function releaseAll() {
+  physicalHeld.clear()
+  arp.value?.clearHeld()
   if (activeNotes.size === 0) return
   activeNotes.clear()
   synth.value?.allNotesOff()
@@ -55,8 +91,22 @@ function releaseAll() {
 
 function panic(e: Event) {
   synth.value?.panic()
+  arp.value?.clearHeld()
   activeNotes.clear()
+  physicalHeld.clear()
   // Blur after click so mobile doesn't keep the button in :hover/:focus state.
+  ;(e.currentTarget as HTMLElement)?.blur?.()
+}
+
+/** Reset the entire patch to the factory default. When the preset system
+ *  lands this should instead create a new empty preset so the user's
+ *  existing preset is preserved. */
+function initPatch(e: Event) {
+  arp.value?.clearHeld()
+  activeNotes.clear()
+  physicalHeld.clear()
+  synth.value?.allNotesOff()
+  restoreSynthPatch(patch, defaultPatch())
   ;(e.currentTarget as HTMLElement)?.blur?.()
 }
 
@@ -122,6 +172,31 @@ function safe<T>(label: string, fn: () => T): T | undefined {
     return undefined
   }
 }
+
+// Arp enable toggle: when turning off, release any currently-held/playing
+// arp notes. When turning off latch, also release. (Arp tracks its own patch
+// reference so the other param changes — rate, BPM, mode — take effect on
+// the next scheduled step automatically.)
+watch(
+  () => patch.arp.enabled,
+  (v) => {
+    if (!v) arp.value?.shutdown()
+  },
+)
+watch(
+  () => patch.arp.latch,
+  (v) => {
+    // If latch is turned off while some notes were sticky, release them
+    // unless the user still has them physically held.
+    if (!v && arp.value) {
+      // Re-sync held chord to only currently-physical keys
+      arp.value.clearHeld()
+      if (patch.arp.enabled) {
+        for (const n of physicalHeld) arp.value.addHeldNote(n, 100)
+      }
+    }
+  },
+)
 
 // FX — live-update reverb + delay on every param change.
 watch(() => patch.fx.reverb.enabled, (v) => safe('setReverbEnabled', () => synth.value?.setReverbEnabled(v)))
@@ -245,6 +320,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="topbar-right">
+        <button class="init" @click="initPatch($event)" title="Reset all controls to default">
+          INIT
+        </button>
         <button class="panic" @click="panic($event)" title="Cut all sound immediately">
           <span class="panic-icon">■</span>
           PANIC
@@ -338,6 +416,10 @@ onBeforeUnmount(() => {
           <VoicePanel :patch="patch" />
         </section>
 
+        <section class="arp-section">
+          <ArpPanel :patch="patch" />
+        </section>
+
         <section class="fx-section">
           <FXPanel :patch="patch" />
         </section>
@@ -426,8 +508,32 @@ onBeforeUnmount(() => {
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
+.init {
+  padding: 7px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  transition: all 100ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .init:hover {
+    color: var(--text);
+    border-color: var(--line-hi);
+  }
+}
+.init:active {
+  transform: scale(0.97);
+  color: var(--text);
+  border-color: var(--line-hi);
+}
+.init:focus { outline: none; }
 .panic {
   display: flex;
   align-items: center;
@@ -578,6 +684,7 @@ onBeforeUnmount(() => {
       'filtenv'
       'filter'
       'filter2'
+      'arp'
       'fx'
       'rand';
   }
@@ -590,6 +697,7 @@ onBeforeUnmount(() => {
       'osc    voice'
       'ampenv filtenv'
       'filter filter2'
+      'arp    arp'
       'fx     fx'
       'rand   rand';
   }
@@ -599,6 +707,9 @@ onBeforeUnmount(() => {
 }
 .fx-section {
   grid-area: fx;
+}
+.arp-section {
+  grid-area: arp;
 }
 .oscillators {
   grid-area: osc;
