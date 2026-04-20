@@ -100,6 +100,44 @@ watch(
   (m) => synth.value?.setVoiceMode(m),
 )
 
+// --- Mobile sound hint ---
+// Browsers can't read the hardware mute switch or system volume. The best we
+// can do is show a proactive dismissible hint on first audio unlock for
+// mobile users — iOS gets a mute-switch-specific message since that's the
+// most common "why is there no sound?" cause.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+const isMobile = isIOS || navigator.maxTouchPoints > 0 || 'ontouchstart' in window
+const showSoundHint = ref(false)
+let soundHintTimer: number | null = null
+
+function dismissSoundHint() {
+  showSoundHint.value = false
+  try {
+    localStorage.setItem('synod:soundHintDismissed', '1')
+  } catch {
+    /* private-mode / quota */
+  }
+  if (soundHintTimer !== null) {
+    clearTimeout(soundHintTimer)
+    soundHintTimer = null
+  }
+}
+
+watch(started, (v) => {
+  if (!v || !isMobile) return
+  let dismissed = false
+  try {
+    dismissed = localStorage.getItem('synod:soundHintDismissed') === '1'
+  } catch {
+    /* ignore */
+  }
+  if (dismissed) return
+  showSoundHint.value = true
+  soundHintTimer = window.setTimeout(() => {
+    showSoundHint.value = false
+  }, 10000)
+})
+
 onMounted(() => {
   // Unlock audio on any user gesture
   const handler = () => {
@@ -191,6 +229,21 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </header>
+
+    <transition name="hint">
+      <div v-if="showSoundHint" class="sound-hint" role="status">
+        <span class="hint-icon">🔊</span>
+        <span class="hint-text">
+          <template v-if="isIOS">
+            No sound? Check the mute switch on the side of your iPhone, and your volume.
+          </template>
+          <template v-else>
+            No sound? Check your volume level.
+          </template>
+        </span>
+        <button class="hint-close" @click="dismissSoundHint" aria-label="Dismiss">×</button>
+      </div>
+    </transition>
 
     <div class="layout-wrap" :class="{ 'fade-up': canScrollUp, 'fade-down': canScrollDown }">
       <main class="layout" ref="layoutRef" @scroll="updateScroll">
@@ -364,6 +417,50 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
 }
+.sound-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  margin: 8px 12px 0 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--accent-dim);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.3;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+.hint-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.hint-text {
+  flex: 1;
+}
+.hint-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.hint-close:hover {
+  color: var(--text);
+}
+.hint-enter-active,
+.hint-leave-active {
+  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+}
+.hint-enter-from,
+.hint-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
 .layout-wrap {
   position: relative;
   flex: 1;
