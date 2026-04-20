@@ -343,14 +343,33 @@ function panic(e: Event) {
   ;(e.currentTarget as HTMLElement)?.blur?.()
 }
 
-/** Load a fresh default patch and un-select any current preset — so the
- *  user's current preset stays untouched and edits here won't save back
- *  over it. */
+/** Create a fresh untitled user preset with default values and select it.
+ *  The previously-current preset is untouched; the new one can be renamed,
+ *  edited, or deleted like any other user preset. */
 function initPatch(e: Event) {
+  const existing = new Set(userPresets.value.map((p) => p.name))
+  let name = 'Untitled'
+  let n = 1
+  while (existing.has(name)) {
+    n++
+    name = `Untitled ${n}`
+  }
+  const preset: SynodPreset = {
+    id: generatePresetId(),
+    name,
+    patch: defaultPatch(),
+    createdAt: new Date().toISOString(),
+  }
+  userPresets.value = [...userPresets.value, preset]
+  saveUserPresets(userPresets.value)
+
+  // Full replace — bypass the bitimbral-partial-load path so Init truly
+  // resets everything (including bimode back to single).
   applyPatch(defaultPatch())
-  currentPresetId.value = null
+  currentPresetId.value = preset.id
+  partPresetIds.value = [preset.id, null]
   isDirty.value = false
-  saveLastPresetId(null)
+  saveLastPresetId(preset.id)
   ;(e.currentTarget as HTMLElement)?.blur?.()
 }
 
