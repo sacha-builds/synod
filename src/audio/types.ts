@@ -125,6 +125,27 @@ export interface PartPatch {
 
 export type BiMode = 'single' | 'layer' | 'split'
 
+export interface SeqStep {
+  active: boolean
+  /** MIDI note number (0..127). */
+  note: number
+  /** 1..127 */
+  velocity: number
+  /** Note-on to note-off as a fraction of step duration (0.05..1). */
+  gate: number
+}
+
+export interface SeqPatch {
+  enabled: boolean
+  /** 30..240 */
+  bpm: number
+  rate: ArpRate
+  /** Steps in the cycle, 1..16. Steps beyond this are retained but inactive. */
+  length: number
+  /** Fixed-size buffer of 16 steps; only the first `length` play. */
+  steps: SeqStep[]
+}
+
 export interface SynthPatch {
   parts: [PartPatch, PartPatch]
   /** Which part the UI is currently editing (0 = A, 1 = B). Not audio-facing,
@@ -137,6 +158,7 @@ export interface SynthPatch {
   masterGain: number
   fx: FXPatch
   arp: ArpPatch
+  seq: SeqPatch
 }
 
 export function defaultPart(): PartPatch {
@@ -184,6 +206,18 @@ export function defaultPatch(): SynthPatch {
       patternLength: 8,
       pattern: Array.from({ length: 16 }, () => ({ active: true, octave: 0, velocityMul: 1 })),
     },
+    seq: {
+      enabled: false,
+      bpm: 120,
+      rate: '1/16',
+      length: 16,
+      steps: Array.from({ length: 16 }, (_, i) => ({
+        active: false,
+        note: 60 + (i % 8), // C4 ascending by default — inactive so nothing plays yet
+        velocity: 100,
+        gate: 0.5,
+      })),
+    },
   }
 }
 
@@ -209,11 +243,30 @@ export interface LegacySynthPatch {
   arp: ArpPatch
 }
 
+function defaultSeq(): SeqPatch {
+  return {
+    enabled: false,
+    bpm: 120,
+    rate: '1/16',
+    length: 16,
+    steps: Array.from({ length: 16 }, (_, i) => ({
+      active: false,
+      note: 60 + (i % 8),
+      velocity: 100,
+      gate: 0.5,
+    })),
+  }
+}
+
 /** Detect and migrate a pre-bitimbral patch to the new shape. Returns the
- *  patch as-is if already new. */
+ *  patch as-is if already new, but fills in missing fields (like `seq` from
+ *  pre-sequencer presets). */
 export function migratePatch(raw: unknown): SynthPatch {
   if (raw && typeof raw === 'object' && 'parts' in raw) {
-    return raw as SynthPatch
+    const p = raw as SynthPatch
+    // Backfill newer fields on presets saved before they existed.
+    if (!p.seq) p.seq = defaultSeq()
+    return p
   }
   const old = raw as LegacySynthPatch
   const partA: PartPatch = {
@@ -238,5 +291,6 @@ export function migratePatch(raw: unknown): SynthPatch {
     masterGain: old.masterGain,
     fx: old.fx,
     arp: old.arp,
+    seq: defaultSeq(),
   }
 }

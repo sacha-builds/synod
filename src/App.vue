@@ -29,7 +29,9 @@ import ArpPanel from './components/ArpPanel.vue'
 import PresetBar from './components/PresetBar.vue'
 import PerformanceBar from './components/PerformanceBar.vue'
 import RecordBar, { type RecordFormat } from './components/RecordBar.vue'
+import SequencerPanel from './components/SequencerPanel.vue'
 import { Arp } from './audio/Arp'
+import { Sequencer } from './audio/Sequencer'
 import { encodeWav } from './audio/encoders/wav'
 import { encodeMp3 } from './audio/encoders/mp3'
 import { useMidi } from './composables/useMidi'
@@ -37,7 +39,13 @@ import { useMidi } from './composables/useMidi'
 const patch = reactive(defaultPatch())
 const synth = shallowRef<Synth | null>(null)
 const arp = shallowRef<Arp | null>(null)
+const seq = shallowRef<Sequencer | null>(null)
 const started = ref(false)
+const seqPlaying = ref(false)
+const seqCurrentStep = ref(-1)
+/** When set, the next user noteOn (QWERTY/click/MIDI) writes its pitch into
+ *  this sequencer step and disarms. */
+const seqArmedStep = ref<number | null>(null)
 
 /** Notes currently sounding (from any source) — what the keyboard highlights. */
 const activeNotes = reactive(new Set<number>())
@@ -438,13 +446,58 @@ function start(): void {
         arpCurrentStep.value = patternIdx
       },
     })
+    seq.value = new Sequencer(s.ctx, patch.seq, {
+      noteOn: (note, velocity) => {
+        if (!synth.value) return
+        activeNotes.add(note)
+        synth.value.noteOn(note, velocity)
+      },
+      noteOff: (note) => {
+        activeNotes.delete(note)
+        synth.value?.noteOff(note)
+      },
+      onStep: (idx) => {
+        seqCurrentStep.value = idx
+      },
+    })
   }
   synth.value.resume()
   started.value = true
 }
 
+function playSeq(): void {
+  if (!synth.value) start()
+  if (!seq.value) return
+  patch.seq.enabled = true
+  seq.value.play()
+  seqPlaying.value = true
+}
+
+function stopSeq(): void {
+  seq.value?.stop()
+  seqPlaying.value = false
+  seqCurrentStep.value = -1
+}
+
+watch(
+  () => patch.seq.enabled,
+  (v) => {
+    if (!v && seqPlaying.value) stopSeq()
+  },
+)
+
 /** Note-on from any source (physical input: MIDI, QWERTY, click). */
 function startNote(note: number, velocity: number) {
+  // Sequencer step-arming: if the user armed a step, this note writes to it.
+  if (seqArmedStep.value !== null) {
+    const idx = seqArmedStep.value
+    if (patch.seq.steps[idx]) {
+      patch.seq.steps[idx].note = note
+      patch.seq.steps[idx].active = true
+    }
+    seqArmedStep.value = null
+    return
+  }
   if (physicalHeld.has(note)) return
   physicalHeld.add(note)
   if (!synth.value) start()
@@ -879,6 +932,17 @@ onBeforeUnmount(() => {
           <ArpPanel :patch="patch" :current-step="arpCurrentStep" />
         </section>
 
+        <section class="seq-section">
+          <SequencerPanel
+            :seq="patch.seq"
+            :is-playing="seqPlaying"
+            :current-step="seqCurrentStep"
+            @play="playSeq"
+            @stop="stopSeq"
+            @arm-step="(i) => (seqArmedStep = i)"
+          />
+        </section>
+
         <section class="fx-section">
           <FXPanel :patch="patch" />
         </section>
@@ -1144,6 +1208,7 @@ onBeforeUnmount(() => {
       'filter'
       'filter2'
       'arp'
+      'seq'
       'fx'
       'rand';
   }
@@ -1157,6 +1222,7 @@ onBeforeUnmount(() => {
       'ampenv filtenv'
       'filter filter2'
       'arp    arp'
+      'seq    seq'
       'fx     fx'
       'rand   rand';
   }
@@ -1169,6 +1235,9 @@ onBeforeUnmount(() => {
 }
 .arp-section {
   grid-area: arp;
+}
+.seq-section {
+  grid-area: seq;
 }
 .oscillators {
   grid-area: osc;
