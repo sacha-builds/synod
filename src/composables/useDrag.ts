@@ -16,6 +16,13 @@ export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd
 
   function onWindowMove(e: PointerEvent) {
     if (!dragging) return
+    // If the user released the button outside the window, we may never get a
+    // pointerup. Every move event, check that buttons are still held; if not,
+    // treat as release. This is the most reliable cross-browser safeguard.
+    if (e.buttons === 0) {
+      onWindowUp()
+      return
+    }
     const delta = startY - e.clientY
     const change = delta - totalY
     totalY = delta
@@ -29,6 +36,7 @@ export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd
     window.removeEventListener('pointermove', onWindowMove)
     window.removeEventListener('pointerup', onWindowUp)
     window.removeEventListener('pointercancel', onWindowUp)
+    window.removeEventListener('blur', onWindowUp)
     onEnd?.()
   }
 
@@ -41,6 +49,7 @@ export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
     window.addEventListener('pointercancel', onWindowUp)
+    window.addEventListener('blur', onWindowUp)
     e.preventDefault()
   }
 
@@ -49,6 +58,7 @@ export function useDrag(onDelta: (deltaY: number, totalY: number) => void, onEnd
     window.removeEventListener('pointermove', onWindowMove)
     window.removeEventListener('pointerup', onWindowUp)
     window.removeEventListener('pointercancel', onWindowUp)
+    window.removeEventListener('blur', onWindowUp)
   })
 
   return { onPointerDown }
