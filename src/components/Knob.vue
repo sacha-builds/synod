@@ -54,7 +54,7 @@ function setFromNorm(n: number) {
   emit('update:modelValue', v)
 }
 
-const { onPointerDown, onPointerMove, onPointerUp } = useDrag((deltaY) => {
+const { onPointerDown } = useDrag((deltaY) => {
   const sensitivity = 1 / 200 // 200px = full range
   setFromNorm(norm.value + deltaY * sensitivity)
 })
@@ -106,8 +106,6 @@ const displayValue = computed(() => {
       class="knob"
       :style="{ width: size + 'px', height: size + 'px' }"
       @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
       @dblclick="onDoubleClick"
       @wheel="onWheel"
     >
