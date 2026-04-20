@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { SynthPatch } from '../audio/types'
-import { cloneSynthPatch, randomize, restoreSynthPatch, type RandomizeGroup } from '../audio/randomize'
+import type { PartPatch } from '../audio/types'
+import { clonePart, randomize, restorePart, type RandomizeGroup } from '../audio/randomize'
 
-const props = defineProps<{ patch: SynthPatch }>()
+const props = defineProps<{ part: PartPatch; partLabel: string }>()
 
 const amount = ref(0.35)
 
-/** Two stacks for undo/redo. A new roll clears the redo stack as usual. */
-const undoStack = ref<SynthPatch[]>([])
-const redoStack = ref<SynthPatch[]>([])
+const undoStack = ref<PartPatch[]>([])
+const redoStack = ref<PartPatch[]>([])
 const HISTORY_MAX = 16
 
 const groups: { id: RandomizeGroup; label: string; title: string }[] = [
@@ -21,24 +20,24 @@ const groups: { id: RandomizeGroup; label: string; title: string }[] = [
 ]
 
 function roll(group: RandomizeGroup) {
-  undoStack.value.push(cloneSynthPatch(props.patch))
+  undoStack.value.push(clonePart(props.part))
   if (undoStack.value.length > HISTORY_MAX) undoStack.value.shift()
   redoStack.value = []
-  randomize(props.patch, group, amount.value)
+  randomize(props.part, group, amount.value)
 }
 
 function undo() {
   const snap = undoStack.value.pop()
   if (!snap) return
-  redoStack.value.push(cloneSynthPatch(props.patch))
-  restoreSynthPatch(props.patch, snap)
+  redoStack.value.push(clonePart(props.part))
+  restorePart(props.part, snap)
 }
 
 function redo() {
   const snap = redoStack.value.pop()
   if (!snap) return
-  undoStack.value.push(cloneSynthPatch(props.patch))
-  restoreSynthPatch(props.patch, snap)
+  undoStack.value.push(clonePart(props.part))
+  restorePart(props.part, snap)
 }
 </script>
 
@@ -47,6 +46,7 @@ function redo() {
     <summary class="panel-title">
       <span class="chevron">▼</span>
       Randomize
+      <span class="scope">· Part {{ partLabel }}</span>
       <span class="amount-readout">· {{ (amount * 100).toFixed(0) }}%</span>
     </summary>
     <div class="row">
@@ -93,9 +93,14 @@ function redo() {
 
 <style scoped>
 .randomize-panel {
-  /* Deliberately compact — a single row of controls rather than a tall panel. */
   padding-top: 10px;
   padding-bottom: 10px;
+}
+.scope {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-left: 2px;
 }
 .amount-readout {
   font-family: var(--font-mono);

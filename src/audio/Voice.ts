@@ -1,4 +1,4 @@
-import type { FilterPatch, SynthPatch } from './types'
+import type { FilterPatch, PartPatch } from './types'
 import { midiToFrequency } from './types'
 
 /**
@@ -12,7 +12,7 @@ import { midiToFrequency } from './types'
 export class Voice {
   private ctx: AudioContext
   private output: AudioNode
-  private patchRef: SynthPatch
+  private patchRef: PartPatch
   private oscillators: OscillatorNode[] = []
   /** Tracks which oscillator-slot index each running oscillator corresponds to
    *  (0, 1, 2), so setNote can re-tune with the current semitone offsets. */
@@ -38,7 +38,7 @@ export class Voice {
     output: AudioNode,
     note: number,
     velocity: number,
-    patch: SynthPatch,
+    patch: PartPatch,
     startTime?: number,
   ) {
     this.ctx = ctx
@@ -158,7 +158,7 @@ export class Voice {
     this.scheduleEnvelopes(this.ctx.currentTime)
   }
 
-  release(patch: SynthPatch, atTime?: number): number {
+  release(patch: PartPatch, atTime?: number): number {
     if (this.released) return this.endTime
     this.released = true
     const now = atTime ?? this.ctx.currentTime

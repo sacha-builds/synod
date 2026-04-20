@@ -97,10 +97,14 @@ export interface ArpPatch {
   pattern: ArpStep[]
 }
 
-export interface SynthPatch {
+/**
+ * Per-part patch — everything that's independent between the two parts of a
+ * bitimbral setup. Oscillators, envelopes, filters, voice mode. FX, master
+ * gain, and the arpeggiator are global (live on SynthPatch) so they apply
+ * equally across whatever arrangement of parts is playing.
+ */
+export interface PartPatch {
   oscillators: [OscillatorPatch, OscillatorPatch, OscillatorPatch]
-  /** Master gain 0..1 */
-  masterGain: number
   ampEnvelope: EnvelopePatch
   filterEnvelope: EnvelopePatch
   filter: FilterPatch
@@ -113,18 +117,33 @@ export interface SynthPatch {
   notePriority: NotePriority
   /** Mono only. When true, new notes played while another is held don't retrigger envelopes. */
   legato: boolean
+  /** Per-part level 0..1 — used to balance the two parts in Layer/Split mode. */
+  level: number
+}
+
+export type BiMode = 'single' | 'layer' | 'split'
+
+export interface SynthPatch {
+  parts: [PartPatch, PartPatch]
+  /** Which part the UI is currently editing (0 = A, 1 = B). Not audio-facing,
+   *  but part of the patch so it restores alongside preset loads. */
+  activePart: 0 | 1
+  bimode: BiMode
+  /** MIDI note at and above which Part B plays in 'split' mode. 0..127. */
+  splitNote: number
+  /** Master gain 0..1 */
+  masterGain: number
   fx: FXPatch
   arp: ArpPatch
 }
 
-export function defaultPatch(): SynthPatch {
+export function defaultPart(): PartPatch {
   return {
     oscillators: [
       { enabled: true, waveform: 'sawtooth', semitones: 0, detune: 0, level: 0.5 },
       { enabled: true, waveform: 'sawtooth', semitones: 0, detune: -7, level: 0.4 },
       { enabled: false, waveform: 'sine', semitones: -12, detune: 0, level: 0.3 },
     ],
-    masterGain: 0.6,
     ampEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.4 },
     filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 0.3 },
     filter: { enabled: true, type: 'lowpass', cutoff: 1200, resonance: 2, envAmount: 3000 },
@@ -134,6 +153,17 @@ export function defaultPatch(): SynthPatch {
     glide: 0,
     notePriority: 'last',
     legato: false,
+    level: 1,
+  }
+}
+
+export function defaultPatch(): SynthPatch {
+  return {
+    parts: [defaultPart(), defaultPart()],
+    activePart: 0,
+    bimode: 'single',
+    splitNote: 60, // middle C
+    masterGain: 0.6,
     fx: {
       reverb: { enabled: false, decay: 2.0, mix: 0.3 },
       delay: { enabled: false, time: 0.3, feedback: 0.35, mix: 0.3 },
@@ -156,4 +186,53 @@ export function defaultPatch(): SynthPatch {
 
 export function midiToFrequency(note: number): number {
   return 440 * Math.pow(2, (note - 69) / 12)
+}
+
+/** Legacy flat patch shape — preserved so old preset files can be migrated
+ *  when imported. */
+export interface LegacySynthPatch {
+  oscillators: OscillatorPatch[]
+  masterGain: number
+  ampEnvelope: EnvelopePatch
+  filterEnvelope: EnvelopePatch
+  filter: FilterPatch
+  filter2: FilterPatch
+  filterRouting: FilterRouting
+  voiceMode: VoiceMode
+  glide: number
+  notePriority: NotePriority
+  legato: boolean
+  fx: FXPatch
+  arp: ArpPatch
+}
+
+/** Detect and migrate a pre-bitimbral patch to the new shape. Returns the
+ *  patch as-is if already new. */
+export function migratePatch(raw: unknown): SynthPatch {
+  if (raw && typeof raw === 'object' && 'parts' in raw) {
+    return raw as SynthPatch
+  }
+  const old = raw as LegacySynthPatch
+  const partA: PartPatch = {
+    oscillators: old.oscillators as PartPatch['oscillators'],
+    ampEnvelope: old.ampEnvelope,
+    filterEnvelope: old.filterEnvelope,
+    filter: old.filter,
+    filter2: old.filter2,
+    filterRouting: old.filterRouting,
+    voiceMode: old.voiceMode,
+    glide: old.glide,
+    notePriority: old.notePriority,
+    legato: old.legato,
+    level: 1,
+  }
+  return {
+    parts: [partA, defaultPart()],
+    activePart: 0,
+    bimode: 'single',
+    splitNote: 60,
+    masterGain: old.masterGain,
+    fx: old.fx,
+    arp: old.arp,
+  }
 }

@@ -1,4 +1,4 @@
-import type { SynthPatch } from './types'
+import { migratePatch, type SynthPatch } from './types'
 
 /**
  * Version stamp for preset files. When the patch schema changes in a
@@ -57,7 +57,9 @@ export function parsePresetFile(json: string): SynodPresetFile {
   if (typeof o.name !== 'string' || !o.patch || typeof o.patch !== 'object') {
     throw new PresetParseError('Missing required fields (name, patch)')
   }
-  return o as SynodPresetFile
+  // Migrate legacy (pre-bitimbral) flat patches on import.
+  const migrated = migratePatch(o.patch)
+  return { ...o, patch: migrated } as SynodPresetFile
 }
 
 // --- LocalStorage persistence for user-created presets ---
@@ -71,7 +73,8 @@ export function loadUserPresets(): SynodPreset[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed as SynodPreset[]
+    // Migrate each preset's patch in case users have pre-bitimbral saved presets.
+    return (parsed as SynodPreset[]).map((p) => ({ ...p, patch: migratePatch(p.patch) }))
   } catch {
     return []
   }

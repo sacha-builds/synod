@@ -1,4 +1,4 @@
-import type { FilterType, SynthPatch, Waveform } from './types'
+import type { ArpPatch, FilterType, PartPatch, SynthPatch, Waveform } from './types'
 
 /** Group of parameters a randomize pass targets. */
 export type RandomizeGroup = 'all' | 'osc' | 'env' | 'filter' | 'voice'
@@ -10,6 +10,9 @@ export type RandomizeGroup = 'all' | 'osc' | 'env' | 'filter' | 'voice'
  * changes; at amount=1 the patch is fully re-rolled; intermediate values
  * nudge the patch toward randomness without straying too far — the same
  * "randomize by N%" pattern common on hardware synths.
+ *
+ * Operates on a single PartPatch; the UI passes in the active part so
+ * randomization edits whichever part is currently being edited.
  */
 
 function rand(min: number, max: number): number {
@@ -18,7 +21,6 @@ function rand(min: number, max: number): number {
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
 }
-/** Lerp in log space — for frequency / time params so perceptually we interpolate proportionally. */
 function lerpLog(current: number, targetMin: number, targetMax: number, amount: number): number {
   const target = Math.exp(rand(Math.log(targetMin), Math.log(targetMax)))
   const c = Math.max(current, 1e-5)
@@ -27,8 +29,6 @@ function lerpLog(current: number, targetMin: number, targetMax: number, amount: 
 function pick<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)]
 }
-/** With probability amount, run the action. Lets us gate discrete switches
- *  (waveform, filter type) so they don't change on every single low-amount pass. */
 function maybe(amount: number, fn: () => void): void {
   if (Math.random() < amount) fn()
 }
@@ -36,17 +36,16 @@ function maybe(amount: number, fn: () => void): void {
 const WAVEFORMS: readonly Waveform[] = ['sine', 'triangle', 'sawtooth', 'square']
 const FILTER_TYPES: readonly FilterType[] = ['lowpass', 'highpass', 'bandpass', 'notch', 'allpass']
 
-export function randomize(patch: SynthPatch, group: RandomizeGroup, amount: number): void {
+export function randomize(part: PartPatch, group: RandomizeGroup, amount: number): void {
   if (amount <= 0) return
-  if (group === 'all' || group === 'osc') randomizeOsc(patch, amount)
-  if (group === 'all' || group === 'env') randomizeEnv(patch, amount)
-  if (group === 'all' || group === 'filter') randomizeFilter(patch, amount)
-  if (group === 'all' || group === 'voice') randomizeVoice(patch, amount)
+  if (group === 'all' || group === 'osc') randomizeOsc(part, amount)
+  if (group === 'all' || group === 'env') randomizeEnv(part, amount)
+  if (group === 'all' || group === 'filter') randomizeFilter(part, amount)
+  if (group === 'all' || group === 'voice') randomizeVoice(part, amount)
 }
 
-function randomizeOsc(patch: SynthPatch, amount: number): void {
-  patch.oscillators.forEach((osc) => {
-    // Skip disabled oscillators entirely — user's on/off choice stands
+function randomizeOsc(part: PartPatch, amount: number): void {
+  part.oscillators.forEach((osc) => {
     if (!osc.enabled) return
     maybe(amount, () => {
       osc.waveform = pick(WAVEFORMS)
@@ -57,10 +56,9 @@ function randomizeOsc(patch: SynthPatch, amount: number): void {
   })
 }
 
-function randomizeEnv(patch: SynthPatch, amount: number): void {
-  const envs = [patch.ampEnvelope, patch.filterEnvelope]
+function randomizeEnv(part: PartPatch, amount: number): void {
+  const envs = [part.ampEnvelope, part.filterEnvelope]
   envs.forEach((env, i) => {
-    // Slightly snappier ranges for amp to avoid always-droning defaults
     const isAmp = i === 0
     env.attack = lerpLog(env.attack, 0.002, isAmp ? 1.5 : 0.6, amount)
     env.decay = lerpLog(env.decay, 0.02, 3, amount)
@@ -69,56 +67,83 @@ function randomizeEnv(patch: SynthPatch, amount: number): void {
   })
 }
 
-function randomizeFilter(patch: SynthPatch, amount: number): void {
+function randomizeFilter(part: PartPatch, amount: number): void {
   maybe(amount, () => {
-    patch.filter.type = pick(FILTER_TYPES)
+    part.filter.type = pick(FILTER_TYPES)
   })
-  patch.filter.cutoff = lerpLog(patch.filter.cutoff, 150, 14000, amount)
-  patch.filter.resonance = lerp(patch.filter.resonance, rand(0.5, 10), amount)
-  patch.filter.envAmount = lerp(patch.filter.envAmount, rand(0, 6000), amount)
+  part.filter.cutoff = lerpLog(part.filter.cutoff, 150, 14000, amount)
+  part.filter.resonance = lerp(part.filter.resonance, rand(0.5, 10), amount)
+  part.filter.envAmount = lerp(part.filter.envAmount, rand(0, 6000), amount)
 
-  if (patch.filter2.enabled) {
+  if (part.filter2.enabled) {
     maybe(amount, () => {
-      patch.filter2.type = pick(FILTER_TYPES)
+      part.filter2.type = pick(FILTER_TYPES)
     })
-    patch.filter2.cutoff = lerpLog(patch.filter2.cutoff, 150, 14000, amount)
-    patch.filter2.resonance = lerp(patch.filter2.resonance, rand(0.5, 10), amount)
-    patch.filter2.envAmount = lerp(patch.filter2.envAmount, rand(0, 6000), amount)
+    part.filter2.cutoff = lerpLog(part.filter2.cutoff, 150, 14000, amount)
+    part.filter2.resonance = lerp(part.filter2.resonance, rand(0.5, 10), amount)
+    part.filter2.envAmount = lerp(part.filter2.envAmount, rand(0, 6000), amount)
   }
 
-  // Routing flip — less likely than type changes
   if (Math.random() < amount * 0.35) {
-    patch.filterRouting = patch.filterRouting === 'series' ? 'parallel' : 'series'
+    part.filterRouting = part.filterRouting === 'series' ? 'parallel' : 'series'
   }
 }
 
-function randomizeVoice(patch: SynthPatch, amount: number): void {
-  // Deliberately *don't* randomize voiceMode / notePriority / legato — those
-  // are stylistic choices the user almost never wants dice-rolled. Only
-  // touch glide (and only in mono mode where it matters).
-  if (patch.voiceMode === 'mono') {
-    patch.glide = lerpLog(Math.max(patch.glide, 0.001), 0.001, 0.8, amount)
+function randomizeVoice(part: PartPatch, amount: number): void {
+  if (part.voiceMode === 'mono') {
+    part.glide = lerpLog(Math.max(part.glide, 0.001), 0.001, 0.8, amount)
   }
 }
 
-/** Deep clone — used so we can store patch snapshots for undo. */
+/** Deep clone — used to store patch snapshots for undo. */
 export function cloneSynthPatch(patch: SynthPatch): SynthPatch {
   return JSON.parse(JSON.stringify(patch))
 }
+export function clonePart(part: PartPatch): PartPatch {
+  return JSON.parse(JSON.stringify(part))
+}
 
-/** Apply snapshot values back onto the reactive patch in place (so Vue
- *  reactivity stays intact — Object.assign on the nested fields keeps the
- *  proxy references). */
+/** Apply snapshot values back onto the reactive patch in place, preserving
+ *  proxy references so Vue reactivity keeps flowing. */
 export function restoreSynthPatch(patch: SynthPatch, snap: SynthPatch): void {
   patch.masterGain = snap.masterGain
-  patch.voiceMode = snap.voiceMode
-  patch.glide = snap.glide
-  patch.notePriority = snap.notePriority
-  patch.legato = snap.legato
-  patch.filterRouting = snap.filterRouting
-  Object.assign(patch.filter, snap.filter)
-  Object.assign(patch.filter2, snap.filter2)
-  Object.assign(patch.ampEnvelope, snap.ampEnvelope)
-  Object.assign(patch.filterEnvelope, snap.filterEnvelope)
-  patch.oscillators.forEach((o, i) => Object.assign(o, snap.oscillators[i]))
+  patch.activePart = snap.activePart
+  patch.bimode = snap.bimode
+  patch.splitNote = snap.splitNote
+  Object.assign(patch.fx.reverb, snap.fx.reverb)
+  Object.assign(patch.fx.delay, snap.fx.delay)
+  restoreArp(patch.arp, snap.arp)
+  restorePart(patch.parts[0], snap.parts[0])
+  restorePart(patch.parts[1], snap.parts[1])
+}
+
+export function restorePart(part: PartPatch, snap: PartPatch): void {
+  part.filterRouting = snap.filterRouting
+  part.voiceMode = snap.voiceMode
+  part.glide = snap.glide
+  part.notePriority = snap.notePriority
+  part.legato = snap.legato
+  part.level = snap.level
+  Object.assign(part.filter, snap.filter)
+  Object.assign(part.filter2, snap.filter2)
+  Object.assign(part.ampEnvelope, snap.ampEnvelope)
+  Object.assign(part.filterEnvelope, snap.filterEnvelope)
+  part.oscillators.forEach((o, i) => Object.assign(o, snap.oscillators[i]))
+}
+
+function restoreArp(arp: ArpPatch, snap: ArpPatch): void {
+  arp.enabled = snap.enabled
+  arp.mode = snap.mode
+  arp.rate = snap.rate
+  arp.bpm = snap.bpm
+  arp.gate = snap.gate
+  arp.swing = snap.swing
+  arp.octaves = snap.octaves
+  arp.latch = snap.latch
+  arp.usePattern = snap.usePattern
+  arp.patternLength = snap.patternLength
+  // Pattern is an array — replace element-wise to keep reactivity.
+  for (let i = 0; i < arp.pattern.length; i++) {
+    if (snap.pattern[i]) Object.assign(arp.pattern[i], snap.pattern[i])
+  }
 }

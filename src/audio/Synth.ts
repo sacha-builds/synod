@@ -1,5 +1,5 @@
 import { Voice } from './Voice'
-import type { FilterType, SynthPatch, VoiceMode } from './types'
+import type { BiMode, FilterType, PartPatch, SynthPatch, VoiceMode } from './types'
 import { defaultPatch } from './types'
 
 /** Generate a stereo impulse response of exponentially-decaying white noise.
@@ -19,41 +19,186 @@ function buildReverbIR(ctx: AudioContext, seconds: number): AudioBuffer {
 }
 
 /**
- * Polyphonic / monophonic synth. Holds the shared AudioContext, master
- * gain, and an analyser for the oscilloscope. Dispatches note events to
- * the active voice mode.
+ * One side of a bitimbral synth — its own voice pool (poly / mono / etc)
+ * driven by its own PartPatch. Outputs into `partBus`, a gain node that the
+ * outer Synth uses to balance the two parts. Construction wires the part's
+ * voice chain into partBus; voices are created on demand.
+ */
+class Part {
+  private ctx: AudioContext
+  readonly partBus: GainNode
+  patch: PartPatch
+
+  private polyVoices = new Map<number, Voice>()
+  private monoVoice: Voice | null = null
+  /** All voices this part has spawned that haven't finished their release
+   *  tail yet. Includes voices removed from polyVoices/monoVoice after
+   *  noteOff but still audible. Panic iterates to silence tails. */
+  allVoices = new Set<Voice>()
+  private heldNotes: number[] = []
+
+  constructor(ctx: AudioContext, output: AudioNode, patch: PartPatch) {
+    this.ctx = ctx
+    this.patch = patch
+    this.partBus = ctx.createGain()
+    this.partBus.gain.value = patch.level
+    this.partBus.connect(output)
+  }
+
+  setLevel(v: number): void {
+    this.patch.level = v
+    this.partBus.gain.setTargetAtTime(v, this.ctx.currentTime, 0.01)
+  }
+
+  setFilterType(type: FilterType, which: 1 | 2 = 1): void {
+    if (which === 1) this.patch.filter.type = type
+    else this.patch.filter2.type = type
+    for (const voice of this.polyVoices.values()) voice.setFilterType(type, which)
+    this.monoVoice?.setFilterType(type, which)
+  }
+
+  setVoiceMode(mode: VoiceMode): void {
+    if (this.patch.voiceMode === mode) return
+    this.releaseAll()
+    this.patch.voiceMode = mode
+  }
+
+  noteOn(note: number, velocity: number, startTime?: number): void {
+    const existingIdx = this.heldNotes.indexOf(note)
+    if (existingIdx >= 0) this.heldNotes.splice(existingIdx, 1)
+    this.heldNotes.push(note)
+
+    if (this.patch.voiceMode === 'mono') this.noteOnMono(velocity, startTime)
+    else this.noteOnPoly(note, velocity, startTime)
+  }
+
+  noteOff(note: number, atTime?: number): void {
+    const idx = this.heldNotes.indexOf(note)
+    if (idx < 0 && !this.polyVoices.has(note) && this.monoVoice?.note !== note) return
+    if (idx >= 0) this.heldNotes.splice(idx, 1)
+    if (this.patch.voiceMode === 'mono') this.noteOffMono(atTime)
+    else this.noteOffPoly(note, atTime)
+  }
+
+  /** Graceful release of everything — uses the envelope release. */
+  releaseAll(): void {
+    for (const voice of this.polyVoices.values()) {
+      voice.release(this.patch)
+      voice.stop()
+    }
+    this.polyVoices.clear()
+    if (this.monoVoice) {
+      this.monoVoice.release(this.patch)
+      this.monoVoice.stop()
+      this.monoVoice = null
+    }
+    this.heldNotes = []
+  }
+
+  /** Instant kill. Disconnects each voice from output. Used by panic. */
+  hardStopAll(): void {
+    for (const voice of this.allVoices) voice.hardStop()
+    this.allVoices.clear()
+    this.polyVoices.clear()
+    this.monoVoice = null
+    this.heldNotes = []
+  }
+
+  /** Sweep done voices from allVoices so the set doesn't grow unbounded. */
+  sweep(): void {
+    const now = this.ctx.currentTime
+    for (const v of this.allVoices) {
+      if (v.isDone(now)) this.allVoices.delete(v)
+    }
+  }
+
+  rescheduleReleases(): void {
+    this.sweep()
+    for (const v of this.allVoices) v.rescheduleRelease()
+  }
+
+  private noteOnPoly(note: number, velocity: number, startTime?: number): void {
+    this.sweep()
+    const existing = this.polyVoices.get(note)
+    if (existing) {
+      existing.release(this.patch, startTime)
+      existing.stop()
+    }
+    const voice = new Voice(this.ctx, this.partBus, note, velocity, this.patch, startTime)
+    this.polyVoices.set(note, voice)
+    this.allVoices.add(voice)
+  }
+
+  private noteOffPoly(note: number, atTime?: number): void {
+    const voice = this.polyVoices.get(note)
+    if (!voice) return
+    voice.release(this.patch, atTime)
+    voice.stop()
+    this.polyVoices.delete(note)
+  }
+
+  private pickPriorityNote(): number | null {
+    if (this.heldNotes.length === 0) return null
+    switch (this.patch.notePriority) {
+      case 'low':
+        return Math.min(...this.heldNotes)
+      case 'high':
+        return Math.max(...this.heldNotes)
+      case 'last':
+      default:
+        return this.heldNotes[this.heldNotes.length - 1]
+    }
+  }
+
+  private noteOnMono(velocity: number, startTime?: number): void {
+    const active = this.pickPriorityNote()
+    if (active === null) return
+    if (this.monoVoice && !this.monoVoice.isDone(this.ctx.currentTime) && this.monoVoice.note === active) return
+
+    if (!this.monoVoice || this.monoVoice.isDone(this.ctx.currentTime)) {
+      const voice = new Voice(this.ctx, this.partBus, active, velocity, this.patch, startTime)
+      this.monoVoice = voice
+      this.allVoices.add(voice)
+      return
+    }
+    this.monoVoice.setNote(active, this.patch.glide)
+    if (!this.patch.legato) this.monoVoice.retriggerEnvelopes()
+  }
+
+  private noteOffMono(atTime?: number): void {
+    if (!this.monoVoice) return
+    const next = this.pickPriorityNote()
+    if (next === null) {
+      this.monoVoice.release(this.patch, atTime)
+      this.monoVoice.stop()
+      this.monoVoice = null
+      return
+    }
+    if (next !== this.monoVoice.note) {
+      this.monoVoice.setNote(next, this.patch.glide)
+    }
+  }
+}
+
+/**
+ * Bitimbral synth: two independent Part engines summed through a shared
+ * voiceBus, then routed through global FX (reverb + delay) into the master.
+ * An analyser sits between master and destination for the oscilloscope.
  */
 export class Synth {
   ctx: AudioContext
-  /** Bus all voices connect to. Splits into dry + reverb send + delay send. */
+  /** Bus that both parts feed into. Splits into dry + reverb + delay. */
   voiceBus: GainNode
   master: GainNode
   analyser: AnalyserNode
   patch: SynthPatch
+  parts: [Part, Part]
 
-  // FX: parallel sends from voiceBus. Dry always on; wet gains control mix.
   private reverb: ConvolverNode
   private reverbWet: GainNode
   private delay: DelayNode
   private delayFeedback: GainNode
   private delayWet: GainNode
-
-  // Poly state
-  private polyVoices = new Map<number, Voice>()
-
-  // Mono state
-  private monoVoice: Voice | null = null
-
-  /** All voices the synth has ever spawned that haven't finished their
-   *  release tail yet. Includes voices that have been removed from
-   *  polyVoices/monoVoice after noteOff but are still making sound.
-   *  Panic iterates this to actually silence those tails; release
-   *  param changes iterate this to reschedule in-flight tails. */
-  private allVoices = new Set<Voice>()
-
-  // Shared state — the stack of currently-held notes (latest-pressed last).
-  // Used for mono note priority and for all-notes-off bookkeeping.
-  private heldNotes: number[] = []
 
   constructor(patch: SynthPatch = defaultPatch()) {
     this.ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
@@ -69,13 +214,12 @@ export class Synth {
     this.voiceBus = this.ctx.createGain()
     this.voiceBus.gain.value = 1
 
-    // Reverb send: voiceBus → reverb → reverbWet → master
+    // FX sends
     this.reverb = this.ctx.createConvolver()
     this.reverb.buffer = buildReverbIR(this.ctx, patch.fx.reverb.decay)
     this.reverbWet = this.ctx.createGain()
     this.reverbWet.gain.value = patch.fx.reverb.enabled ? patch.fx.reverb.mix : 0
 
-    // Delay send: voiceBus → delay → delayWet → master (delay → delayFeedback → delay)
     this.delay = this.ctx.createDelay(5)
     this.delay.delayTime.value = patch.fx.delay.time
     this.delayFeedback = this.ctx.createGain()
@@ -85,7 +229,6 @@ export class Synth {
     this.delayWet = this.ctx.createGain()
     this.delayWet.gain.value = patch.fx.delay.enabled ? patch.fx.delay.mix : 0
 
-    // Wiring
     this.voiceBus.connect(this.master) // dry
     this.voiceBus.connect(this.reverb)
     this.reverb.connect(this.reverbWet)
@@ -96,12 +239,24 @@ export class Synth {
 
     this.master.connect(this.analyser)
     this.analyser.connect(this.ctx.destination)
+
+    this.parts = [
+      new Part(this.ctx, this.voiceBus, patch.parts[0]),
+      new Part(this.ctx, this.voiceBus, patch.parts[1]),
+    ]
   }
 
-  /** Resume the AudioContext. Fire-and-forget so callers can invoke from a
-   *  user gesture handler without awaiting — critical on iOS Safari, which
-   *  drops the user-gesture context across awaits and refuses to unlock
-   *  audio if resume is promise-chained from a gesture. */
+  /** Update internal Part patch references when the SynthPatch reference
+   *  is replaced (e.g. via preset load through restoreSynthPatch). The
+   *  parts are re-pointed at the new patch's nested PartPatch objects so
+   *  subsequent mutations on them flow into the audio engine. */
+  syncPartPatches(): void {
+    this.parts[0].patch = this.patch.parts[0]
+    this.parts[1].patch = this.patch.parts[1]
+    this.parts[0].setLevel(this.patch.parts[0].level)
+    this.parts[1].setLevel(this.patch.parts[1].level)
+  }
+
   resume(): void {
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {})
@@ -113,25 +268,27 @@ export class Synth {
     this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.01)
   }
 
-  setFilterType(type: FilterType, which: 1 | 2 = 1): void {
-    if (which === 1) this.patch.filter.type = type
-    else this.patch.filter2.type = type
-    for (const voice of this.polyVoices.values()) voice.setFilterType(type, which)
-    this.monoVoice?.setFilterType(type, which)
+  setPartLevel(partIdx: 0 | 1, v: number): void {
+    this.parts[partIdx].setLevel(v)
   }
 
-  /** Reschedule the in-flight release of any currently-releasing voices.
-   *  Called when the user changes the amp or filter envelope release knob. */
+  setPartFilterType(partIdx: 0 | 1, type: FilterType, which: 1 | 2 = 1): void {
+    this.parts[partIdx].setFilterType(type, which)
+  }
+
+  setPartVoiceMode(partIdx: 0 | 1, mode: VoiceMode): void {
+    this.parts[partIdx].setVoiceMode(mode)
+  }
+
   rescheduleReleases(): void {
-    this.sweepDoneVoices()
-    for (const voice of this.allVoices) voice.rescheduleRelease()
+    this.parts[0].rescheduleReleases()
+    this.parts[1].rescheduleReleases()
   }
 
-  // --- FX setters ---
+  // FX setters (global)
   private smooth(param: AudioParam, target: number): void {
     param.setTargetAtTime(target, this.ctx.currentTime, 0.02)
   }
-
   setReverbEnabled(v: boolean): void {
     this.patch.fx.reverb.enabled = v
     this.smooth(this.reverbWet.gain, v ? this.patch.fx.reverb.mix : 0)
@@ -142,10 +299,8 @@ export class Synth {
   }
   setReverbDecay(v: number): void {
     this.patch.fx.reverb.decay = v
-    // Rebuild the IR. Cheap enough to do per-change (white-noise exp decay).
     this.reverb.buffer = buildReverbIR(this.ctx, v)
   }
-
   setDelayEnabled(v: boolean): void {
     this.patch.fx.delay.enabled = v
     this.smooth(this.delayWet.gain, v ? this.patch.fx.delay.mix : 0)
@@ -163,72 +318,40 @@ export class Synth {
     if (this.patch.fx.delay.enabled) this.smooth(this.delayWet.gain, v)
   }
 
-  private sweepDoneVoices(): void {
-    const now = this.ctx.currentTime
-    for (const v of this.allVoices) {
-      if (v.isDone(now)) this.allVoices.delete(v)
-    }
-  }
-
-  /** Switch voice mode. Gracefully releases anything currently playing in the
-   *  old mode so we don't leak voices. */
-  setVoiceMode(mode: VoiceMode): void {
-    if (this.patch.voiceMode === mode) return
-    this.allNotesOff()
-    this.patch.voiceMode = mode
+  /** Which parts should receive this note given the current bimode. */
+  private partsForNote(note: number): Part[] {
+    const mode: BiMode = this.patch.bimode
+    if (mode === 'single') return [this.parts[0]]
+    if (mode === 'layer') return [this.parts[0], this.parts[1]]
+    return [note < this.patch.splitNote ? this.parts[0] : this.parts[1]]
   }
 
   noteOn(note: number, velocity = 100, startTime?: number): void {
-    // Track in held stack regardless of mode — keeps panic/allNotesOff clean.
-    const existingIdx = this.heldNotes.indexOf(note)
-    if (existingIdx >= 0) this.heldNotes.splice(existingIdx, 1)
-    this.heldNotes.push(note)
-
-    if (this.patch.voiceMode === 'mono') this.noteOnMono(note, velocity, startTime)
-    else this.noteOnPoly(note, velocity, startTime)
+    for (const part of this.partsForNote(note)) part.noteOn(note, velocity, startTime)
   }
 
   noteOff(note: number, atTime?: number): void {
-    const idx = this.heldNotes.indexOf(note)
-    if (idx >= 0) this.heldNotes.splice(idx, 1)
-
-    if (this.patch.voiceMode === 'mono') this.noteOffMono(note, atTime)
-    else this.noteOffPoly(note, atTime)
+    // Noteoff goes to every part — idempotent if the part doesn't have the
+    // voice, so we don't need to remember where a note came from.
+    this.parts[0].noteOff(note, atTime)
+    this.parts[1].noteOff(note, atTime)
   }
 
   allNotesOff(): void {
-    for (const voice of this.polyVoices.values()) {
-      voice.release(this.patch)
-      voice.stop()
-    }
-    this.polyVoices.clear()
-    if (this.monoVoice) {
-      this.monoVoice.release(this.patch)
-      this.monoVoice.stop()
-      this.monoVoice = null
-    }
-    this.heldNotes = []
+    this.parts[0].releaseAll()
+    this.parts[1].releaseAll()
   }
 
-  /** Hard-kill everything currently making sound, including voices that are
-   *  only still audible because they're playing out a release tail after
-   *  their note-off already fired. Also flushes the delay feedback loop so
-   *  an echoing tail doesn't survive the panic. Briefly dips master gain
-   *  to absorb any click from abrupt cutoff. */
   panic(): void {
     const now = this.ctx.currentTime
     const target = this.patch.masterGain
     this.master.gain.cancelScheduledValues(now)
     this.master.gain.setValueAtTime(0, now)
 
-    for (const voice of this.allVoices) voice.hardStop()
-    this.allVoices.clear()
-    this.polyVoices.clear()
-    this.monoVoice = null
-    this.heldNotes = []
+    this.parts[0].hardStopAll()
+    this.parts[1].hardStopAll()
 
-    // Flush delay feedback so an in-flight echo tail dies instead of
-    // playing itself out after master restores.
+    // Flush delay feedback so an in-flight echo tail dies cleanly.
     this.delayFeedback.gain.cancelScheduledValues(now)
     this.delayFeedback.gain.setValueAtTime(0, now)
     this.delayFeedback.gain.setValueAtTime(0, now + 0.1)
@@ -236,75 +359,5 @@ export class Synth {
 
     this.master.gain.setValueAtTime(0, now + 0.03)
     this.master.gain.linearRampToValueAtTime(target, now + 0.08)
-  }
-
-  // --- Poly ---
-  private noteOnPoly(note: number, velocity: number, startTime?: number): void {
-    this.sweepDoneVoices()
-    const existing = this.polyVoices.get(note)
-    if (existing) {
-      existing.release(this.patch, startTime)
-      existing.stop()
-      // existing stays in allVoices until its release tail finishes
-    }
-    const voice = new Voice(this.ctx, this.voiceBus, note, velocity, this.patch, startTime)
-    this.polyVoices.set(note, voice)
-    this.allVoices.add(voice)
-  }
-
-  private noteOffPoly(note: number, atTime?: number): void {
-    const voice = this.polyVoices.get(note)
-    if (!voice) return
-    voice.release(this.patch, atTime)
-    voice.stop()
-    this.polyVoices.delete(note)
-    // Kept in allVoices until release tail finishes
-  }
-
-  // --- Mono ---
-  private pickPriorityNote(): number | null {
-    if (this.heldNotes.length === 0) return null
-    switch (this.patch.notePriority) {
-      case 'low':
-        return Math.min(...this.heldNotes)
-      case 'high':
-        return Math.max(...this.heldNotes)
-      case 'last':
-      default:
-        return this.heldNotes[this.heldNotes.length - 1]
-    }
-  }
-
-  private noteOnMono(_note: number, velocity: number, startTime?: number): void {
-    const active = this.pickPriorityNote()
-    if (active === null) return
-
-    if (this.monoVoice && !this.monoVoice.isDone(this.ctx.currentTime) && this.monoVoice.note === active) {
-      return
-    }
-
-    if (!this.monoVoice || this.monoVoice.isDone(this.ctx.currentTime)) {
-      const voice = new Voice(this.ctx, this.voiceBus, active, velocity, this.patch, startTime)
-      this.monoVoice = voice
-      this.allVoices.add(voice)
-      return
-    }
-
-    this.monoVoice.setNote(active, this.patch.glide)
-    if (!this.patch.legato) this.monoVoice.retriggerEnvelopes()
-  }
-
-  private noteOffMono(_note: number, atTime?: number): void {
-    if (!this.monoVoice) return
-    const next = this.pickPriorityNote()
-    if (next === null) {
-      this.monoVoice.release(this.patch, atTime)
-      this.monoVoice.stop()
-      this.monoVoice = null
-      return
-    }
-    if (next !== this.monoVoice.note) {
-      this.monoVoice.setNote(next, this.patch.glide)
-    }
   }
 }

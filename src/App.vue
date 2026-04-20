@@ -76,11 +76,20 @@ function applyPatch(newPatch: typeof patch): void {
   activeNotes.clear()
   physicalHeld.clear()
   restoreSynthPatch(patch, newPatch)
+  // Let the engine re-point at the new nested part patches. Reactivity will
+  // still flow thanks to restoreSynthPatch mutating in place, but the Synth
+  // holds its own PartPatch references we want to re-bind just in case.
+  synth.value?.syncPartPatches()
   // Let the reactive system settle, then re-arm dirty tracking.
   setTimeout(() => {
     suppressDirty = false
   }, 50)
 }
+
+/** The part currently being edited in the UI. All per-part panels bind
+ *  to this — switching the part selector swaps which PartPatch the
+ *  panels mutate. */
+const currentPart = computed(() => patch.parts[patch.activePart])
 
 function loadPreset(id: string): void {
   const preset = allPresets.value.find((p) => p.id === id)
@@ -316,27 +325,34 @@ watch(
   (v) => synth.value?.setMasterGain(v),
 )
 
-// Filter type is cheap to live-update across active voices
-watch(
-  () => patch.filter.type,
-  (t) => synth.value?.setFilterType(t, 1),
-)
-watch(
-  () => patch.filter2.type,
-  (t) => synth.value?.setFilterType(t, 2),
-)
-
-watch(
-  () => patch.voiceMode,
-  (m) => synth.value?.setVoiceMode(m),
-)
-
-// Release knobs (amp + filter env) live-update any currently-releasing
-// voices — so turning release down mid-tail actually shortens the tail.
-watch(
-  [() => patch.ampEnvelope.release, () => patch.filterEnvelope.release],
-  () => synth.value?.rescheduleReleases(),
-)
+// Per-part watches — the same cheap live-updates apply to each part.
+// Watch each side individually so switching activePart doesn't fire a
+// stale update on the part that didn't actually change.
+for (const partIdx of [0, 1] as const) {
+  watch(
+    () => patch.parts[partIdx].filter.type,
+    (t) => synth.value?.setPartFilterType(partIdx, t, 1),
+  )
+  watch(
+    () => patch.parts[partIdx].filter2.type,
+    (t) => synth.value?.setPartFilterType(partIdx, t, 2),
+  )
+  watch(
+    () => patch.parts[partIdx].voiceMode,
+    (m) => synth.value?.setPartVoiceMode(partIdx, m),
+  )
+  watch(
+    () => patch.parts[partIdx].level,
+    (v) => synth.value?.setPartLevel(partIdx, v),
+  )
+  watch(
+    [
+      () => patch.parts[partIdx].ampEnvelope.release,
+      () => patch.parts[partIdx].filterEnvelope.release,
+    ],
+    () => synth.value?.parts[partIdx].rescheduleReleases(),
+  )
+}
 
 /** Run a synth method inside a try/catch so a single bad call can't crash
  *  Vue and unmount the UI. Logs to console instead. Useful during
@@ -553,7 +569,7 @@ onBeforeUnmount(() => {
     <div class="layout-wrap" :class="{ 'fade-up': canScrollUp, 'fade-down': canScrollDown }">
       <main class="layout" ref="layoutRef" @scroll="updateScroll">
         <section class="randomize-section">
-          <RandomizePanel :patch="patch" />
+          <RandomizePanel :part="currentPart" :part-label="patch.activePart === 0 ? 'A' : 'B'" />
         </section>
 
         <details class="oscillators panel" open>
@@ -562,9 +578,9 @@ onBeforeUnmount(() => {
             Oscillators
           </summary>
           <div class="osc-grid">
-            <OscillatorPanel :index="0" :osc="patch.oscillators[0]" />
-            <OscillatorPanel :index="1" :osc="patch.oscillators[1]" />
-            <OscillatorPanel :index="2" :osc="patch.oscillators[2]" />
+            <OscillatorPanel :index="0" :osc="currentPart.oscillators[0]" />
+            <OscillatorPanel :index="1" :osc="currentPart.oscillators[1]" />
+            <OscillatorPanel :index="2" :osc="currentPart.oscillators[2]" />
           </div>
         </details>
 
@@ -573,30 +589,30 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="ampenv-section">
-          <EnvelopePanel title="Amp Envelope" :env="patch.ampEnvelope" />
+          <EnvelopePanel title="Amp Envelope" :env="currentPart.ampEnvelope" />
         </section>
 
         <section class="filtenv-section">
-          <EnvelopePanel title="Filter Envelope" :env="patch.filterEnvelope" />
+          <EnvelopePanel title="Filter Envelope" :env="currentPart.filterEnvelope" />
         </section>
 
         <section class="filter-section">
-          <FilterPanel title="Filter 1" :filter="patch.filter" />
-          <div class="routing-bar" :class="{ muted: !patch.filter2.enabled }">
+          <FilterPanel title="Filter 1" :filter="currentPart.filter" />
+          <div class="routing-bar" :class="{ muted: !currentPart.filter2.enabled }">
             <span class="routing-label">ROUTING</span>
             <button
               class="routing-btn"
-              :class="{ active: patch.filterRouting === 'series' }"
-              @click="patch.filterRouting = 'series'"
-              :disabled="!patch.filter2.enabled"
+              :class="{ active: currentPart.filterRouting === 'series' }"
+              @click="currentPart.filterRouting = 'series'"
+              :disabled="!currentPart.filter2.enabled"
             >
               SERIES
             </button>
             <button
               class="routing-btn"
-              :class="{ active: patch.filterRouting === 'parallel' }"
-              @click="patch.filterRouting = 'parallel'"
-              :disabled="!patch.filter2.enabled"
+              :class="{ active: currentPart.filterRouting === 'parallel' }"
+              @click="currentPart.filterRouting = 'parallel'"
+              :disabled="!currentPart.filter2.enabled"
             >
               PARALLEL
             </button>
@@ -604,11 +620,11 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="filter2-section">
-          <FilterPanel title="Filter 2" :filter="patch.filter2" show-enable />
+          <FilterPanel title="Filter 2" :filter="currentPart.filter2" show-enable />
         </section>
 
         <section class="voice-section">
-          <VoicePanel :patch="patch" />
+          <VoicePanel :part="currentPart" />
         </section>
 
         <section class="arp-section">

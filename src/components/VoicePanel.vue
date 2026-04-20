@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { NotePriority, SynthPatch, VoiceMode } from '../audio/types'
+import type { NotePriority, PartPatch, VoiceMode } from '../audio/types'
 import Knob from './Knob.vue'
 
-defineProps<{ patch: SynthPatch }>()
+defineProps<{ part: PartPatch }>()
 
 const modes: { id: VoiceMode; label: string; hint: string }[] = [
   { id: 'mono', label: 'MONO', hint: 'One voice, new notes steal the previous' },
@@ -35,9 +35,9 @@ const fmtTime = (v: number) => {
         v-for="m in modes"
         :key="m.id"
         class="mode"
-        :class="{ active: patch.voiceMode === m.id, disabled: m.id === 'para' }"
+        :class="{ active: part.voiceMode === m.id, disabled: m.id === 'para' }"
         :disabled="m.id === 'para'"
-        @click="patch.voiceMode = m.id"
+        @click="part.voiceMode = m.id"
         :title="m.id === 'para' ? 'Paraphonic — coming soon' : m.hint"
       >
         {{ m.label }}
@@ -45,9 +45,9 @@ const fmtTime = (v: number) => {
     </div>
 
     <transition name="slide">
-      <div v-if="patch.voiceMode === 'mono'" class="mono-row">
+      <div v-if="part.voiceMode === 'mono'" class="mono-row">
         <div class="glide-cell">
-          <Knob v-model="patch.glide" :min="0" :max="2" curve="exp" label="GLIDE" :format="fmtTime" />
+          <Knob v-model="part.glide" :min="0" :max="2" curve="exp" label="GLIDE" :format="fmtTime" />
         </div>
         <div class="prio-cell">
           <div class="sub-label">PRIORITY</div>
@@ -56,8 +56,8 @@ const fmtTime = (v: number) => {
               v-for="p in priorities"
               :key="p.id"
               class="prio"
-              :class="{ active: patch.notePriority === p.id }"
-              @click="patch.notePriority = p.id"
+              :class="{ active: part.notePriority === p.id }"
+              @click="part.notePriority = p.id"
               :title="p.hint"
             >
               {{ p.label }}
@@ -65,7 +65,7 @@ const fmtTime = (v: number) => {
           </div>
         </div>
         <label class="legato" :title="'Hold a new note while another is held — envelope stays open'">
-          <input type="checkbox" v-model="patch.legato" />
+          <input type="checkbox" v-model="part.legato" />
           <span>LEGATO</span>
         </label>
       </div>
