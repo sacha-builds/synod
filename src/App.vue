@@ -2,7 +2,20 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Synth } from './audio/Synth'
 import { defaultPatch } from './audio/types'
-import { restoreSynthPatch } from './audio/randomize'
+import { cloneSynthPatch, restoreSynthPatch } from './audio/randomize'
+import {
+  generatePresetId,
+  loadLastPresetId,
+  loadUserPresets,
+  parsePresetFile,
+  PresetParseError,
+  presetFileName,
+  saveLastPresetId,
+  saveUserPresets,
+  serializePreset,
+  type SynodPreset,
+} from './audio/presets'
+import { FACTORY_PRESETS } from './audio/factoryPresets'
 import OscillatorPanel from './components/OscillatorPanel.vue'
 import EnvelopePanel from './components/EnvelopePanel.vue'
 import FilterPanel from './components/FilterPanel.vue'
@@ -13,6 +26,7 @@ import VoicePanel from './components/VoicePanel.vue'
 import RandomizePanel from './components/RandomizePanel.vue'
 import FXPanel from './components/FXPanel.vue'
 import ArpPanel from './components/ArpPanel.vue'
+import PresetBar from './components/PresetBar.vue'
 import { Arp } from './audio/Arp'
 import { useMidi } from './composables/useMidi'
 
@@ -30,6 +44,163 @@ const physicalHeld = reactive(new Set<number>())
 /** Index within the arp's pattern that's currently playing, for the step
  *  indicator in the pattern editor. -1 when arp isn't playing. */
 const arpCurrentStep = ref(-1)
+
+// --- Preset management ---
+const userPresets = ref<SynodPreset[]>(loadUserPresets())
+const currentPresetId = ref<string | null>(null)
+const isDirty = ref(false)
+/** Block the dirty-detector briefly after loading a preset so the restore
+ *  itself doesn't flag the patch as dirty. */
+let suppressDirty = true
+
+const allPresets = computed(() => [...FACTORY_PRESETS, ...userPresets.value])
+const presetListItems = computed(() =>
+  allPresets.value.map((p) => ({ id: p.id, name: p.name, builtin: p.builtin })),
+)
+
+// Mark the patch dirty when anything changes. deep: true so all nested
+// params trigger. A small setTimeout at load time avoids flagging the
+// restore itself as a user edit.
+watch(
+  () => JSON.stringify(patch),
+  () => {
+    if (!suppressDirty) isDirty.value = true
+  },
+)
+
+function applyPatch(newPatch: typeof patch): void {
+  suppressDirty = true
+  // Clean up audio state before loading so no stuck voices carry over.
+  synth.value?.allNotesOff()
+  arp.value?.clearHeld()
+  activeNotes.clear()
+  physicalHeld.clear()
+  restoreSynthPatch(patch, newPatch)
+  // Let the reactive system settle, then re-arm dirty tracking.
+  setTimeout(() => {
+    suppressDirty = false
+  }, 50)
+}
+
+function loadPreset(id: string): void {
+  const preset = allPresets.value.find((p) => p.id === id)
+  if (!preset) return
+  applyPatch(preset.patch)
+  currentPresetId.value = preset.id
+  isDirty.value = false
+  saveLastPresetId(preset.id)
+}
+
+function prevPreset(): void {
+  const list = allPresets.value
+  if (list.length === 0) return
+  const idx = list.findIndex((p) => p.id === currentPresetId.value)
+  const prev = list[(idx - 1 + list.length) % list.length]
+  loadPreset(prev.id)
+}
+function nextPreset(): void {
+  const list = allPresets.value
+  if (list.length === 0) return
+  const idx = list.findIndex((p) => p.id === currentPresetId.value)
+  const next = list[(idx + 1) % list.length]
+  loadPreset(next.id)
+}
+
+function savePreset(): void {
+  const existing = userPresets.value.find((p) => p.id === currentPresetId.value)
+  if (!existing) return
+  existing.patch = cloneSynthPatch(patch)
+  saveUserPresets(userPresets.value)
+  isDirty.value = false
+}
+
+function savePresetAs(): void {
+  const suggested =
+    allPresets.value.find((p) => p.id === currentPresetId.value)?.name ?? 'My Preset'
+  const name = window.prompt('Name for this preset:', suggested)
+  if (!name) return
+  const trimmed = name.trim()
+  if (!trimmed) return
+  const preset: SynodPreset = {
+    id: generatePresetId(),
+    name: trimmed,
+    patch: cloneSynthPatch(patch),
+    createdAt: new Date().toISOString(),
+  }
+  userPresets.value = [...userPresets.value, preset]
+  saveUserPresets(userPresets.value)
+  currentPresetId.value = preset.id
+  isDirty.value = false
+  saveLastPresetId(preset.id)
+}
+
+function renamePreset(): void {
+  const preset = userPresets.value.find((p) => p.id === currentPresetId.value)
+  if (!preset) return
+  const name = window.prompt('New name:', preset.name)
+  if (!name) return
+  const trimmed = name.trim()
+  if (!trimmed) return
+  preset.name = trimmed
+  saveUserPresets(userPresets.value)
+}
+
+function deletePreset(): void {
+  const preset = userPresets.value.find((p) => p.id === currentPresetId.value)
+  if (!preset) return
+  if (!window.confirm(`Delete preset "${preset.name}"?`)) return
+  userPresets.value = userPresets.value.filter((p) => p.id !== preset.id)
+  saveUserPresets(userPresets.value)
+  // Fall back to the Init factory preset
+  loadPreset(FACTORY_PRESETS[0].id)
+}
+
+function exportPreset(): void {
+  const preset = allPresets.value.find((p) => p.id === currentPresetId.value)
+  if (!preset) return
+  // Ensure the exported patch reflects any unsaved edits.
+  const snapshot: SynodPreset = { ...preset, patch: cloneSynthPatch(patch) }
+  const json = serializePreset(snapshot)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = presetFileName(snapshot)
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+async function importPreset(file: File): Promise<void> {
+  try {
+    const text = await file.text()
+    const parsed = parsePresetFile(text)
+    const preset: SynodPreset = {
+      id: generatePresetId(),
+      name: parsed.name,
+      author: parsed.author,
+      patch: parsed.patch,
+      createdAt: parsed.createdAt,
+    }
+    userPresets.value = [...userPresets.value, preset]
+    saveUserPresets(userPresets.value)
+    loadPreset(preset.id)
+  } catch (e) {
+    const msg = e instanceof PresetParseError ? e.message : 'Failed to import preset'
+    window.alert(`Import failed: ${msg}`)
+  }
+}
+
+// Initial load: last-used preset, or the first factory preset.
+{
+  const lastId = loadLastPresetId()
+  const start =
+    (lastId && allPresets.value.find((p) => p.id === lastId)) || FACTORY_PRESETS[0]
+  // Apply the patch but don't treat this as a user edit.
+  applyPatch(start.patch)
+  currentPresetId.value = start.id
+}
 
 /** Create (if needed) and resume the synth synchronously from a user gesture.
  *  Must stay synchronous — iOS Safari drops the gesture across awaits. */
@@ -105,15 +276,14 @@ function panic(e: Event) {
   ;(e.currentTarget as HTMLElement)?.blur?.()
 }
 
-/** Reset the entire patch to the factory default. When the preset system
- *  lands this should instead create a new empty preset so the user's
- *  existing preset is preserved. */
+/** Load a fresh default patch and un-select any current preset — so the
+ *  user's current preset stays untouched and edits here won't save back
+ *  over it. */
 function initPatch(e: Event) {
-  arp.value?.clearHeld()
-  activeNotes.clear()
-  physicalHeld.clear()
-  synth.value?.allNotesOff()
-  restoreSynthPatch(patch, defaultPatch())
+  applyPatch(defaultPatch())
+  currentPresetId.value = null
+  isDirty.value = false
+  saveLastPresetId(null)
   ;(e.currentTarget as HTMLElement)?.blur?.()
 }
 
@@ -349,6 +519,21 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </header>
+
+    <PresetBar
+      :presets="presetListItems"
+      :current-id="currentPresetId"
+      :is-dirty="isDirty"
+      @load="loadPreset"
+      @prev="prevPreset"
+      @next="nextPreset"
+      @save="savePreset"
+      @save-as="savePresetAs"
+      @rename="renamePreset"
+      @remove="deletePreset"
+      @export-preset="exportPreset"
+      @import-preset="importPreset"
+    />
 
     <transition name="hint">
       <div v-if="showSoundHint" class="sound-hint" role="status">
