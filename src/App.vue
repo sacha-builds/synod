@@ -545,25 +545,25 @@ onBeforeUnmount(() => {
 @media (max-width: 899px) {
   .layout {
     grid-template-areas:
-      'rand'
       'scope'
       'osc'
       'voice'
       'ampenv'
       'filtenv'
       'filter'
-      'filter2';
+      'filter2'
+      'rand';
   }
 }
 @media (min-width: 900px) {
   .layout {
     grid-template-columns: 1.35fr 1fr;
     grid-template-areas:
-      'rand   rand'
       'osc    scope'
       'osc    voice'
       'ampenv filtenv'
-      'filter filter2';
+      'filter filter2'
+      'rand   rand';
   }
 }
 .randomize-section {

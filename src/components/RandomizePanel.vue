@@ -2,16 +2,15 @@
 import { ref } from 'vue'
 import type { SynthPatch } from '../audio/types'
 import { cloneSynthPatch, randomize, restoreSynthPatch, type RandomizeGroup } from '../audio/randomize'
-import Knob from './Knob.vue'
 
 const props = defineProps<{ patch: SynthPatch }>()
 
-// Amount is 0..1 internally but shown as a 0..100 percent.
 const amount = ref(0.35)
 
-// Undo history — deep snapshots pushed before each randomize.
-const history = ref<SynthPatch[]>([])
-const HISTORY_MAX = 12
+/** Two stacks for undo/redo. A new roll clears the redo stack as usual. */
+const undoStack = ref<SynthPatch[]>([])
+const redoStack = ref<SynthPatch[]>([])
+const HISTORY_MAX = 16
 
 const groups: { id: RandomizeGroup; label: string; title: string }[] = [
   { id: 'all', label: 'ALL', title: 'Randomize every parameter group' },
@@ -22,15 +21,23 @@ const groups: { id: RandomizeGroup; label: string; title: string }[] = [
 ]
 
 function roll(group: RandomizeGroup) {
-  // Snapshot the current patch before any changes so undo is possible.
-  history.value.push(cloneSynthPatch(props.patch))
-  if (history.value.length > HISTORY_MAX) history.value.shift()
+  undoStack.value.push(cloneSynthPatch(props.patch))
+  if (undoStack.value.length > HISTORY_MAX) undoStack.value.shift()
+  redoStack.value = []
   randomize(props.patch, group, amount.value)
 }
 
 function undo() {
-  const snap = history.value.pop()
+  const snap = undoStack.value.pop()
   if (!snap) return
+  redoStack.value.push(cloneSynthPatch(props.patch))
+  restoreSynthPatch(props.patch, snap)
+}
+
+function redo() {
+  const snap = redoStack.value.pop()
+  if (!snap) return
+  undoStack.value.push(cloneSynthPatch(props.patch))
   restoreSynthPatch(props.patch, snap)
 }
 </script>
@@ -40,52 +47,110 @@ function undo() {
     <summary class="panel-title">
       <span class="chevron">▼</span>
       Randomize
+      <span class="amount-readout">· {{ (amount * 100).toFixed(0) }}%</span>
     </summary>
     <div class="row">
-      <Knob
-        v-model="amount"
-        :min="0"
-        :max="1"
-        label="AMOUNT"
-        :format="(v) => (v * 100).toFixed(0) + '%'"
-        title="How far toward random. 0% = no change, 100% = fully random."
-      />
+      <div class="amount-cell">
+        <label class="mini-label">AMOUNT</label>
+        <input
+          type="range"
+          :value="amount"
+          @input="amount = parseFloat(($event.target as HTMLInputElement).value)"
+          min="0"
+          max="1"
+          step="0.01"
+          class="amount-slider"
+          :title="`${(amount * 100).toFixed(0)}% toward random`"
+        />
+      </div>
       <div class="groups">
-        <button
-          v-for="g in groups"
-          :key="g.id"
-          class="group-btn"
-          :title="g.title"
-          @click="roll(g.id)"
-        >
+        <button v-for="g in groups" :key="g.id" class="group-btn" :title="g.title" @click="roll(g.id)">
           <span class="die">🎲</span>
           {{ g.label }}
         </button>
       </div>
-      <button
-        class="undo-btn"
-        :disabled="history.length === 0"
-        :title="`Undo last randomize (${history.length} stacked)`"
-        @click="undo"
-      >
-        ↶ UNDO
-      </button>
+      <div class="history">
+        <button
+          class="hist-btn"
+          :disabled="undoStack.length === 0"
+          :title="`Undo (${undoStack.length})`"
+          @click="undo"
+        >
+          ↶
+        </button>
+        <button
+          class="hist-btn"
+          :disabled="redoStack.length === 0"
+          :title="`Redo (${redoStack.length})`"
+          @click="redo"
+        >
+          ↷
+        </button>
+      </div>
     </div>
   </details>
 </template>
 
 <style scoped>
 .randomize-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  /* Deliberately compact — a single row of controls rather than a tall panel. */
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.amount-readout {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-left: 2px;
 }
 .row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
 }
+.amount-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 0 1 140px;
+  min-width: 110px;
+}
+.mini-label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+.amount-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--bg-2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.amount-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid var(--accent-hi);
+  cursor: pointer;
+}
+.amount-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid var(--accent-hi);
+  cursor: pointer;
+}
+
 .groups {
   display: flex;
   flex: 1;
@@ -97,14 +162,14 @@ function undo() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 7px 10px;
-  font-size: 10px;
+  padding: 6px 9px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.12em;
   color: var(--text-dim);
   border-radius: 3px;
-  transition: all 100ms var(--ease-out);
   -webkit-tap-highlight-color: transparent;
+  transition: all 100ms var(--ease-out);
 }
 @media (hover: hover) {
   .group-btn:hover {
@@ -116,43 +181,34 @@ function undo() {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--accent-hi);
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 .die {
-  font-size: 12px;
+  font-size: 11px;
   filter: saturate(0) brightness(1.1);
 }
-.undo-btn {
-  padding: 7px 10px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
+
+.history {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.hist-btn {
+  padding: 5px 9px;
+  font-size: 14px;
+  line-height: 1;
   color: var(--text-dim);
   border-radius: 3px;
+  min-width: 32px;
 }
-.undo-btn:disabled {
-  opacity: 0.35;
+.hist-btn:disabled {
+  opacity: 0.3;
   cursor: not-allowed;
 }
 @media (hover: hover) {
-  .undo-btn:not(:disabled):hover {
-    color: var(--text);
+  .hist-btn:not(:disabled):hover {
+    color: var(--accent-hi);
     border-color: var(--line-hi);
-  }
-}
-
-@media (max-width: 520px) {
-  .row {
-    gap: 8px;
-  }
-  .group-btn {
-    padding: 6px 8px;
-    font-size: 9px;
-    letter-spacing: 0.1em;
-  }
-  .undo-btn {
-    padding: 6px 8px;
-    font-size: 9px;
   }
 }
 </style>

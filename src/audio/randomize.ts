@@ -8,8 +8,8 @@ export type RandomizeGroup = 'all' | 'osc' | 'env' | 'filter' | 'voice'
  * random value within a musically-sensible range, then lerp from the current
  * value to that random target by `amount` (0..1). So at amount=0 nothing
  * changes; at amount=1 the patch is fully re-rolled; intermediate values
- * nudge the patch toward randomness without straying too far. This is how
- * hardware synths like Hydrasynth do "randomize by N%".
+ * nudge the patch toward randomness without straying too far — the same
+ * "randomize by N%" pattern common on hardware synths.
  */
 
 function rand(min: number, max: number): number {
