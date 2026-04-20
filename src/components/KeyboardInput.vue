@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 
+const props = defineProps<{
+  /** Set of MIDI notes currently active (from any source) for visual feedback. */
+  activeNotes: Set<number>
+}>()
+
 const emit = defineEmits<{
   noteOn: [note: number, velocity: number]
   noteOff: [note: number]
@@ -20,8 +25,7 @@ const upperMap: Record<string, number> = {
 
 const octave = ref(3)
 const OCTAVES = 5 // C3 .. C8 range displayed
-const held = new Set<string>()
-const pressed = ref(new Set<number>())
+const held = new Set<string>() // QWERTY key codes currently held (for repeat suppression)
 
 function noteFor(code: string): number | null {
   if (code in lowerMap) return lowerMap[code] + octave.value * 12
@@ -29,16 +33,12 @@ function noteFor(code: string): number | null {
   return null
 }
 
+// Emit-only helpers — parent owns the active-notes state (so MIDI, QWERTY,
+// and click-drag all stay in sync).
 function play(note: number) {
-  if (pressed.value.has(note)) return
-  pressed.value = new Set([...pressed.value, note])
   emit('noteOn', note, 100)
 }
 function stop(note: number) {
-  if (!pressed.value.has(note)) return
-  const next = new Set(pressed.value)
-  next.delete(note)
-  pressed.value = next
   emit('noteOff', note)
 }
 
@@ -68,7 +68,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
-  for (const n of pressed.value) emit('noteOff', n)
 })
 
 // --- Mouse / touch play ---
@@ -172,7 +171,7 @@ function labelFor(n: number): string {
             v-for="k in whiteKeys"
             :key="k.note"
             class="white"
-            :class="{ active: pressed.has(k.note) }"
+            :class="{ active: props.activeNotes.has(k.note) }"
             :title="labelFor(k.note)"
             @pointerdown="onKeyPointerDown(k.note, $event)"
             @pointerenter="onKeyPointerEnter(k.note)"
@@ -185,7 +184,7 @@ function labelFor(n: number): string {
             v-for="b in blackKeys"
             :key="b.note"
             class="black"
-            :class="{ active: pressed.has(b.note) }"
+            :class="{ active: props.activeNotes.has(b.note) }"
             :style="{ left: b.leftPercent + '%' }"
             :title="labelFor(b.note)"
             @pointerdown="onKeyPointerDown(b.note, $event)"

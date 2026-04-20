@@ -13,7 +13,9 @@ import { useMidi } from './composables/useMidi'
 const patch = reactive(defaultPatch())
 const synth = shallowRef<Synth | null>(null)
 const started = ref(false)
-const midiActivity = ref(0)
+
+/** All currently-held notes, across all input sources (MIDI, QWERTY, click). */
+const activeNotes = reactive(new Set<number>())
 
 async function start() {
   if (synth.value) {
@@ -27,24 +29,26 @@ async function start() {
   started.value = true
 }
 
-function onNoteOn(note: number, velocity: number) {
+/** Note-on from any source. Dedups so repeat triggers from different sources
+ *  don't stack voices. */
+function startNote(note: number, velocity: number) {
+  if (activeNotes.has(note)) return
+  activeNotes.add(note)
   if (!synth.value) {
-    // If MIDI hits before the user has clicked, try to unlock; browsers may reject.
     start().then(() => synth.value?.noteOn(note, velocity))
     return
   }
   synth.value.noteOn(note, velocity)
 }
-function onNoteOff(note: number) {
+function stopNote(note: number) {
+  if (!activeNotes.has(note)) return
+  activeNotes.delete(note)
   synth.value?.noteOff(note)
 }
 
 const midi = useMidi({
-  noteOn: (note, velocity) => {
-    midiActivity.value = performance.now()
-    onNoteOn(note, velocity)
-  },
-  noteOff: (note) => onNoteOff(note),
+  noteOn: (note, velocity) => startNote(note, velocity),
+  noteOff: (note) => stopNote(note),
 })
 
 const midiBlink = ref(false)
@@ -143,7 +147,7 @@ onMounted(() => {
 
       <section class="kbd-section panel">
         <h3 class="panel-title">Keyboard</h3>
-        <KeyboardInput @note-on="onNoteOn" @note-off="onNoteOff" />
+        <KeyboardInput :active-notes="activeNotes" @note-on="startNote" @note-off="stopNote" />
       </section>
     </main>
   </div>
