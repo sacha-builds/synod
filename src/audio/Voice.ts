@@ -1,4 +1,4 @@
-import type { SynthPatch } from './types'
+import type { FilterPatch, SynthPatch } from './types'
 import { midiToFrequency } from './types'
 
 /**
@@ -20,6 +20,10 @@ export class Voice {
   private oscGains: GainNode[] = []
   private mixer: GainNode
   private filter: BiquadFilterNode
+  private filter2: BiquadFilterNode
+  /** Whether filter2 is wired into the signal path for this voice. Captured at
+   *  construction; routing changes take effect on the next note. */
+  private filter2Active: boolean
   private amp: GainNode
 
   /** Current MIDI note. Mutable in mono mode. */
@@ -44,12 +48,31 @@ export class Voice {
     this.filter.type = patch.filter.type
     this.filter.Q.value = patch.filter.resonance
 
+    this.filter2 = ctx.createBiquadFilter()
+    this.filter2.type = patch.filter2.type
+    this.filter2.Q.value = patch.filter2.resonance
+
     this.amp = ctx.createGain()
     this.amp.gain.value = 0
-
-    this.mixer.connect(this.filter)
-    this.filter.connect(this.amp)
     this.amp.connect(this.output)
+
+    this.filter2Active = patch.filter2.enabled
+    if (!this.filter2Active) {
+      // Single-filter path
+      this.mixer.connect(this.filter)
+      this.filter.connect(this.amp)
+    } else if (patch.filterRouting === 'series') {
+      // mixer → filter1 → filter2 → amp
+      this.mixer.connect(this.filter)
+      this.filter.connect(this.filter2)
+      this.filter2.connect(this.amp)
+    } else {
+      // Parallel: mixer feeds both; both sum into amp
+      this.mixer.connect(this.filter)
+      this.mixer.connect(this.filter2)
+      this.filter.connect(this.amp)
+      this.filter2.connect(this.amp)
+    }
 
     patch.oscillators.forEach((osc, idx) => {
       if (!osc.enabled) return
@@ -78,14 +101,21 @@ export class Voice {
     this.amp.gain.linearRampToValueAtTime(1, fromTime + a.attack)
     this.amp.gain.linearRampToValueAtTime(a.sustain, fromTime + a.attack + a.decay)
 
-    const f = patch.filterEnvelope
-    const base = patch.filter.cutoff
-    const peak = Math.min(20000, base + patch.filter.envAmount)
-    const sus = Math.min(20000, base + patch.filter.envAmount * f.sustain)
-    this.filter.frequency.cancelScheduledValues(fromTime)
-    this.filter.frequency.setValueAtTime(this.filter.frequency.value, fromTime)
-    this.filter.frequency.linearRampToValueAtTime(peak, fromTime + f.attack)
-    this.filter.frequency.linearRampToValueAtTime(sus, fromTime + f.attack + f.decay)
+    this.scheduleFilterEnv(this.filter, patch.filter, fromTime)
+    if (this.filter2Active) {
+      this.scheduleFilterEnv(this.filter2, patch.filter2, fromTime)
+    }
+  }
+
+  private scheduleFilterEnv(filter: BiquadFilterNode, fp: FilterPatch, fromTime: number): void {
+    const f = this.patchRef.filterEnvelope
+    const base = fp.cutoff
+    const peak = Math.min(20000, base + fp.envAmount)
+    const sus = Math.min(20000, base + fp.envAmount * f.sustain)
+    filter.frequency.cancelScheduledValues(fromTime)
+    filter.frequency.setValueAtTime(filter.frequency.value, fromTime)
+    filter.frequency.linearRampToValueAtTime(peak, fromTime + f.attack)
+    filter.frequency.linearRampToValueAtTime(sus, fromTime + f.attack + f.decay)
   }
 
   /** Retune oscillators to a new note, optionally gliding over `glideSec`. */
@@ -131,17 +161,25 @@ export class Voice {
     this.amp.gain.setValueAtTime(currentAmp, now)
     this.amp.gain.linearRampToValueAtTime(0, now + a.release)
 
-    const currentCut = this.filter.frequency.value
-    this.filter.frequency.cancelScheduledValues(now)
-    this.filter.frequency.setValueAtTime(currentCut, now)
-    this.filter.frequency.linearRampToValueAtTime(patch.filter.cutoff, now + f.release)
+    this.releaseFilter(this.filter, patch.filter, now, f.release)
+    if (this.filter2Active) {
+      this.releaseFilter(this.filter2, patch.filter2, now, f.release)
+    }
 
     this.endTime = now + Math.max(a.release, f.release) + 0.05
     return this.endTime
   }
 
-  setFilterType(type: BiquadFilterType): void {
-    this.filter.type = type
+  private releaseFilter(filter: BiquadFilterNode, fp: FilterPatch, now: number, releaseSec: number): void {
+    const cur = filter.frequency.value
+    filter.frequency.cancelScheduledValues(now)
+    filter.frequency.setValueAtTime(cur, now)
+    filter.frequency.linearRampToValueAtTime(fp.cutoff, now + releaseSec)
+  }
+
+  setFilterType(type: BiquadFilterType, which: 1 | 2 = 1): void {
+    if (which === 1) this.filter.type = type
+    else this.filter2.type = type
   }
 
   stop(): void {
@@ -155,7 +193,10 @@ export class Voice {
     })
   }
 
-  /** Instant stop — bypasses any pending release envelope. */
+  /** Instant stop — bypasses any pending release envelope, and severs the
+   *  amp-to-output connection so no residual signal can pass even if the
+   *  AudioParam cancel/setValueAtTime dance doesn't clobber an in-progress
+   *  ramp cleanly. Voice is unusable after this. */
   hardStop(): void {
     const now = this.ctx.currentTime
     this.amp.gain.cancelScheduledValues(now)
@@ -167,6 +208,11 @@ export class Voice {
         /* already stopped */
       }
     })
+    try {
+      this.amp.disconnect()
+    } catch {
+      /* already disconnected */
+    }
   }
 
   isDone(now: number): boolean {

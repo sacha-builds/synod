@@ -23,11 +23,14 @@ export interface EnvelopePatch {
 }
 
 export type FilterType = 'lowpass' | 'highpass' | 'bandpass' | 'notch' | 'allpass'
+export type FilterRouting = 'series' | 'parallel'
 
 export type VoiceMode = 'mono' | 'para' | 'poly'
 export type NotePriority = 'last' | 'low' | 'high'
 
 export interface FilterPatch {
+  /** Filter 1 is always treated as enabled. Field is meaningful for Filter 2. */
+  enabled: boolean
   type: FilterType
   /** Cutoff in Hz (20..20000) */
   cutoff: number
@@ -44,6 +47,8 @@ export interface SynthPatch {
   ampEnvelope: EnvelopePatch
   filterEnvelope: EnvelopePatch
   filter: FilterPatch
+  filter2: FilterPatch
+  filterRouting: FilterRouting
   voiceMode: VoiceMode
   /** Portamento / glide time in seconds (mono only). 0 = instant pitch change. */
   glide: number
@@ -63,7 +68,9 @@ export function defaultPatch(): SynthPatch {
     masterGain: 0.6,
     ampEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.4 },
     filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 0.3 },
-    filter: { type: 'lowpass', cutoff: 1200, resonance: 2, envAmount: 3000 },
+    filter: { enabled: true, type: 'lowpass', cutoff: 1200, resonance: 2, envAmount: 3000 },
+    filter2: { enabled: false, type: 'highpass', cutoff: 200, resonance: 1, envAmount: 0 },
+    filterRouting: 'series',
     voiceMode: 'poly',
     glide: 0,
     notePriority: 'last',

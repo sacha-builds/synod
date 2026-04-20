@@ -88,7 +88,11 @@ watch(
 // Filter type is cheap to live-update across active voices
 watch(
   () => patch.filter.type,
-  (t) => synth.value?.setFilterType(t),
+  (t) => synth.value?.setFilterType(t, 1),
+)
+watch(
+  () => patch.filter2.type,
+  (t) => synth.value?.setFilterType(t, 2),
 )
 
 watch(
@@ -215,7 +219,27 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="filter-section">
-          <FilterPanel :filter="patch.filter" />
+          <FilterPanel title="Filter 1" :filter="patch.filter" />
+          <div class="routing-bar" :class="{ muted: !patch.filter2.enabled }">
+            <span class="routing-label">ROUTING</span>
+            <button
+              class="routing-btn"
+              :class="{ active: patch.filterRouting === 'series' }"
+              @click="patch.filterRouting = 'series'"
+              :disabled="!patch.filter2.enabled"
+            >
+              SERIES
+            </button>
+            <button
+              class="routing-btn"
+              :class="{ active: patch.filterRouting === 'parallel' }"
+              @click="patch.filterRouting = 'parallel'"
+              :disabled="!patch.filter2.enabled"
+            >
+              PARALLEL
+            </button>
+          </div>
+          <FilterPanel title="Filter 2" :filter="patch.filter2" show-enable />
         </section>
 
         <section class="voice-section">
@@ -428,6 +452,45 @@ onBeforeUnmount(() => {
 }
 .filter-section {
   grid-area: filter;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.routing-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  transition: opacity 120ms;
+}
+.routing-bar.muted {
+  opacity: 0.45;
+}
+.routing-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+  margin-right: auto;
+}
+.routing-btn {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 5px 10px;
+  color: var(--text-dim);
+  border-radius: 3px;
+}
+.routing-btn.active {
+  color: var(--accent-hi);
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+.routing-btn:disabled {
+  cursor: not-allowed;
 }
 .voice-section {
   grid-area: voice;

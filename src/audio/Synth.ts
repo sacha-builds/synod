@@ -1,5 +1,5 @@
 import { Voice } from './Voice'
-import type { FilterType, NotePriority, SynthPatch, VoiceMode } from './types'
+import type { FilterType, SynthPatch, VoiceMode } from './types'
 import { defaultPatch } from './types'
 
 /**
@@ -52,10 +52,11 @@ export class Synth {
     this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.01)
   }
 
-  setFilterType(type: FilterType): void {
-    this.patch.filter.type = type
-    for (const voice of this.polyVoices.values()) voice.setFilterType(type)
-    this.monoVoice?.setFilterType(type)
+  setFilterType(type: FilterType, which: 1 | 2 = 1): void {
+    if (which === 1) this.patch.filter.type = type
+    else this.patch.filter2.type = type
+    for (const voice of this.polyVoices.values()) voice.setFilterType(type, which)
+    this.monoVoice?.setFilterType(type, which)
   }
 
   /** Switch voice mode. Gracefully releases anything currently playing in the
@@ -145,7 +146,7 @@ export class Synth {
     }
   }
 
-  private noteOnMono(note: number, velocity: number): void {
+  private noteOnMono(_note: number, velocity: number): void {
     const active = this.pickPriorityNote()
     if (active === null) return
 
