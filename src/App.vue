@@ -28,7 +28,10 @@ import FXPanel from './components/FXPanel.vue'
 import ArpPanel from './components/ArpPanel.vue'
 import PresetBar from './components/PresetBar.vue'
 import PerformanceBar from './components/PerformanceBar.vue'
+import RecordBar, { type RecordFormat } from './components/RecordBar.vue'
 import { Arp } from './audio/Arp'
+import { encodeWav } from './audio/encoders/wav'
+import { encodeMp3 } from './audio/encoders/mp3'
 import { useMidi } from './composables/useMidi'
 
 const patch = reactive(defaultPatch())
@@ -45,6 +48,66 @@ const physicalHeld = reactive(new Set<number>())
 /** Index within the arp's pattern that's currently playing, for the step
  *  indicator in the pattern editor. -1 when arp isn't playing. */
 const arpCurrentStep = ref(-1)
+
+// --- Recording state ---
+const isRecording = ref(false)
+const recordElapsed = ref(0)
+let recordTicker: number | null = null
+
+async function startRecording(format: RecordFormat): Promise<void> {
+  if (!synth.value) start()
+  if (!synth.value) return
+  try {
+    await synth.value.recorder.init()
+  } catch (e) {
+    console.error('[synod] Recorder init failed:', e)
+    alert('Could not initialize the recorder in this browser.')
+    return
+  }
+  synth.value.recorder.start()
+  isRecording.value = true
+  recordElapsed.value = 0
+  recordTicker = window.setInterval(() => {
+    if (!synth.value) return
+    recordElapsed.value = synth.value.recorder.elapsedSeconds()
+  }, 100)
+  // Stash selected format so stopRecording knows how to encode.
+  recordFormat = format
+}
+
+let recordFormat: RecordFormat = 'wav'
+
+async function stopRecording(): Promise<void> {
+  if (!synth.value || !isRecording.value) return
+  const result = synth.value.recorder.stop()
+  isRecording.value = false
+  if (recordTicker !== null) {
+    clearInterval(recordTicker)
+    recordTicker = null
+  }
+  if (!result || result.left.length === 0) return
+
+  try {
+    const blob =
+      recordFormat === 'wav'
+        ? encodeWav(result.left, result.right, result.sampleRate)
+        : await encodeMp3(result.left, result.right, result.sampleRate, 192)
+    const ext = recordFormat
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, '_').slice(0, 19)
+    const fname = `synod-${timestamp}.${ext}`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fname
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('[synod] Encode failed:', e)
+    alert(`Encoding to ${recordFormat.toUpperCase()} failed. See console for details.`)
+  }
+}
 
 // --- Preset management ---
 const userPresets = ref<SynodPreset[]>(loadUserPresets())
@@ -643,6 +706,13 @@ onBeforeUnmount(() => {
     />
 
     <PerformanceBar :patch="patch" />
+
+    <RecordBar
+      :is-recording="isRecording"
+      :elapsed="recordElapsed"
+      @start="startRecording"
+      @stop="stopRecording"
+    />
 
     <transition name="hint">
       <div v-if="showSoundHint" class="sound-hint" role="status">

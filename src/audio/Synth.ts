@@ -1,4 +1,5 @@
 import { Voice } from './Voice'
+import { Recorder } from './Recorder'
 import type { BiMode, FilterType, PartPatch, SynthPatch, VoiceMode } from './types'
 import { defaultPatch } from './types'
 
@@ -200,6 +201,10 @@ export class Synth {
   private delayFeedback: GainNode
   private delayWet: GainNode
 
+  /** Off-graph tap on master for WAV/MP3 export. Lazily initialized the
+   *  first time start() is called on it. */
+  recorder: Recorder
+
   constructor(patch: SynthPatch = defaultPatch()) {
     this.ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
     this.patch = patch
@@ -244,6 +249,8 @@ export class Synth {
       new Part(this.ctx, this.voiceBus, patch.parts[0]),
       new Part(this.ctx, this.voiceBus, patch.parts[1]),
     ]
+
+    this.recorder = new Recorder(this.ctx, this.master)
   }
 
   /** Update internal Part patch references when the SynthPatch reference
