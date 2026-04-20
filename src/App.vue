@@ -41,9 +41,20 @@ function startNote(note: number, velocity: number) {
   synth.value.noteOn(note, velocity)
 }
 function stopNote(note: number) {
-  if (!activeNotes.has(note)) return
+  // Don't guard on activeNotes.has — always propagate noteOff in case the two
+  // drifted out of sync (lost MIDI message, focus loss mid-note, etc). The
+  // synth is already idempotent on unknown notes.
   activeNotes.delete(note)
   synth.value?.noteOff(note)
+}
+
+/** Gently release every held note. Used when the window loses focus — key-up
+ *  events stop firing during blur, so without this, any QWERTY-held notes
+ *  would sustain indefinitely. */
+function releaseAll() {
+  if (activeNotes.size === 0) return
+  activeNotes.clear()
+  synth.value?.allNotesOff()
 }
 
 function panic() {
@@ -93,6 +104,13 @@ onMounted(() => {
   }
   window.addEventListener('pointerdown', handler, { once: true })
   window.addEventListener('keydown', handler, { once: true })
+
+  // Release held notes on blur / tab hide — QWERTY key-up doesn't fire while
+  // the window is unfocused, so notes would otherwise sustain forever.
+  window.addEventListener('blur', releaseAll)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) releaseAll()
+  })
 })
 </script>
 
