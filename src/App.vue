@@ -75,6 +75,12 @@ watch(
   (v) => synth.value?.setMasterGain(v),
 )
 
+// Filter type is cheap to live-update across active voices
+watch(
+  () => patch.filter.type,
+  (t) => synth.value?.setFilterType(t),
+)
+
 onMounted(() => {
   // Unlock audio on any user gesture
   const handler = () => {

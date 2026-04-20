@@ -1,5 +1,5 @@
 import { Voice } from './Voice'
-import type { SynthPatch } from './types'
+import type { FilterType, SynthPatch } from './types'
 import { defaultPatch } from './types'
 
 /**
@@ -39,6 +39,13 @@ export class Synth {
   setMasterGain(v: number): void {
     this.patch.masterGain = v
     this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.01)
+  }
+
+  setFilterType(type: FilterType): void {
+    this.patch.filter.type = type
+    for (const voice of this.voices.values()) {
+      voice.setFilterType(type)
+    }
   }
 
   noteOn(note: number, velocity = 100): void {

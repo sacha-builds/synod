@@ -31,7 +31,7 @@ export class Voice {
     this.mixer.gain.value = 1
 
     this.filter = ctx.createBiquadFilter()
-    this.filter.type = 'lowpass'
+    this.filter.type = patch.filter.type
     this.filter.Q.value = patch.filter.resonance
 
     this.amp = ctx.createGain()
@@ -93,6 +93,10 @@ export class Voice {
 
     this.endTime = now + Math.max(a.release, f.release) + 0.05
     return this.endTime
+  }
+
+  setFilterType(type: BiquadFilterType): void {
+    this.filter.type = type
   }
 
   stop(): void {

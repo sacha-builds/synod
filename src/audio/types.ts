@@ -22,7 +22,10 @@ export interface EnvelopePatch {
   release: number
 }
 
+export type FilterType = 'lowpass' | 'highpass' | 'bandpass' | 'notch' | 'allpass'
+
 export interface FilterPatch {
+  type: FilterType
   /** Cutoff in Hz (20..20000) */
   cutoff: number
   /** Resonance Q (0.1..20) */
@@ -50,7 +53,7 @@ export function defaultPatch(): SynthPatch {
     masterGain: 0.6,
     ampEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.4 },
     filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 0.3 },
-    filter: { cutoff: 1200, resonance: 2, envAmount: 3000 },
+    filter: { type: 'lowpass', cutoff: 1200, resonance: 2, envAmount: 3000 },
   }
 }
 
