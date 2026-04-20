@@ -1196,6 +1196,12 @@ onBeforeUnmount(() => {
     'filter'
     'voice';
 }
+/* Let grid cells shrink below their content's min-content so sections with
+   internal overflow-x: auto (the sequencer's step grid) actually scroll
+   internally instead of forcing the whole layout wider than the viewport. */
+.layout > * {
+  min-width: 0;
+}
 /* Mobile: oscilloscope first so users see motion/feedback before the controls */
 @media (max-width: 899px) {
   .layout {
