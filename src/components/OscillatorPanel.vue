@@ -12,6 +12,7 @@ const waveforms: { id: Waveform; label: string; path: string }[] = [
   { id: 'triangle', label: 'TRI', path: 'M 2 10 L 6 2 L 14 18 L 18 10' },
   { id: 'sawtooth', label: 'SAW', path: 'M 2 18 L 10 2 L 10 18 L 18 2' },
   { id: 'square', label: 'SQR', path: 'M 2 18 L 2 4 L 10 4 L 10 18 L 18 18 L 18 4' },
+  { id: 'pulse', label: 'PLS', path: 'M 2 18 L 2 4 L 7 4 L 7 18 L 18 18 L 18 4' },
 ]
 </script>
 
@@ -64,6 +65,14 @@ const waveforms: { id: Waveform; label: string; path: string }[] = [
         :format="(v) => (v > 0 ? '+' : '') + v.toFixed(0)"
       />
       <Knob v-model="osc.level" :min="0" :max="1" label="LEVEL" :format="(v) => (v * 100).toFixed(0) + '%'" />
+      <Knob
+        v-if="osc.waveform === 'pulse'"
+        v-model="osc.pulseWidth"
+        :min="0.05"
+        :max="0.95"
+        label="WIDTH"
+        :format="(v) => (v * 100).toFixed(0) + '%'"
+      />
     </div>
   </div>
 </template>

@@ -126,6 +126,7 @@ export function restorePart(part: PartPatch, snap: PartPatch): void {
   part.legato = snap.legato
   part.level = snap.level
   part.transpose = snap.transpose
+  part.phaseReset = snap.phaseReset
   Object.assign(part.filter, snap.filter)
   Object.assign(part.filter2, snap.filter2)
   Object.assign(part.ampEnvelope, snap.ampEnvelope)

@@ -1,4 +1,4 @@
-export type Waveform = 'sine' | 'triangle' | 'sawtooth' | 'square'
+export type Waveform = 'sine' | 'triangle' | 'sawtooth' | 'square' | 'pulse'
 
 export interface OscillatorPatch {
   enabled: boolean
@@ -9,6 +9,8 @@ export interface OscillatorPatch {
   detune: number
   /** Mix level 0..1 */
   level: number
+  /** Pulse duty cycle (0.05..0.95). Only applies when waveform === 'pulse'. */
+  pulseWidth: number
 }
 
 export interface EnvelopePatch {
@@ -119,6 +121,11 @@ export interface PartPatch {
   level: number
   /** Semitone transpose applied to every note routed to this part (-24..+24). */
   transpose: number
+  /** When true, every note starts oscillators at phase 0 (every hit sounds
+   *  identical — classic "modern" sound). When false, oscillators free-run
+   *  and catch each note at whatever phase they happen to be in, giving the
+   *  organic chorus/flange character of analog voices with detuned stacks. */
+  phaseReset: boolean
 }
 
 export type BiMode = 'single' | 'layer' | 'split'
@@ -164,9 +171,9 @@ export interface SynthPatch {
 export function defaultPart(): PartPatch {
   return {
     oscillators: [
-      { enabled: true, waveform: 'sawtooth', semitones: 0, detune: 0, level: 0.5 },
-      { enabled: true, waveform: 'sawtooth', semitones: 0, detune: -7, level: 0.4 },
-      { enabled: false, waveform: 'sine', semitones: -12, detune: 0, level: 0.3 },
+      { enabled: true, waveform: 'sawtooth', semitones: 0, detune: 0, level: 0.5, pulseWidth: 0.5 },
+      { enabled: true, waveform: 'sawtooth', semitones: 0, detune: -7, level: 0.4, pulseWidth: 0.5 },
+      { enabled: false, waveform: 'sine', semitones: -12, detune: 0, level: 0.3, pulseWidth: 0.5 },
     ],
     ampEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.4 },
     filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 0.3 },
@@ -179,6 +186,7 @@ export function defaultPart(): PartPatch {
     legato: false,
     level: 1,
     transpose: 0,
+    phaseReset: true,
   }
 }
 
@@ -274,6 +282,13 @@ export function migratePatch(raw: unknown): SynthPatch {
     // Drop the now-obsolete per-module bpm fields so they can't drift.
     if (p.arp && 'bpm' in p.arp) delete p.arp.bpm
     if (p.seq && 'bpm' in p.seq) delete p.seq.bpm
+    // Backfill per-part phaseReset + per-osc pulseWidth on older presets.
+    for (const part of p.parts) {
+      if (typeof part.phaseReset !== 'boolean') part.phaseReset = true
+      for (const osc of part.oscillators) {
+        if (typeof osc.pulseWidth !== 'number') osc.pulseWidth = 0.5
+      }
+    }
     return p
   }
   const old = raw as LegacySynthPatch
@@ -290,6 +305,11 @@ export function migratePatch(raw: unknown): SynthPatch {
     legato: old.legato,
     level: 1,
     transpose: 0,
+    phaseReset: true,
+  }
+  // Legacy oscillators didn't have pulseWidth — fill in the default.
+  for (const osc of partA.oscillators) {
+    if (typeof osc.pulseWidth !== 'number') osc.pulseWidth = 0.5
   }
   return {
     parts: [partA, defaultPart()],

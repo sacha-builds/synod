@@ -70,6 +70,20 @@ const fmtTime = (v: number) => {
         </label>
       </div>
     </transition>
+
+    <label
+      class="phase-toggle"
+      :title="
+        part.phaseReset
+          ? 'Key Sync ON: every note resets oscillator phase — clean, identical attacks'
+          : 'Key Sync OFF: oscillators free-run — organic chorus/flange on detuned stacks'
+      "
+    >
+      <input type="checkbox" v-model="part.phaseReset" />
+      <span>
+        KEY SYNC <span class="on">{{ part.phaseReset ? 'ON' : 'OFF' }}</span>
+      </span>
+    </label>
   </details>
 </template>
 
@@ -156,6 +170,28 @@ const fmtTime = (v: number) => {
 }
 .legato input {
   accent-color: var(--accent);
+}
+
+.phase-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+.phase-toggle input {
+  accent-color: var(--accent);
+}
+.phase-toggle .on {
+  font-family: var(--font-mono);
+  color: var(--accent-hi);
+  padding-left: 4px;
 }
 
 @media (max-width: 520px) {

@@ -1,6 +1,42 @@
 import type { FilterPatch, PartPatch } from './types'
 import { midiToFrequency } from './types'
 
+/** Cache of pulse PeriodicWaves keyed by width bucket + AudioContext.
+ *  Widths are quantized to 2% buckets so minor knob jitter doesn't blow
+ *  the cache, and so identical-width oscillators across voices share one wave. */
+const pulseCache = new WeakMap<AudioContext, Map<number, PeriodicWave>>()
+
+function getPulseWave(ctx: AudioContext, width: number): PeriodicWave {
+  let perCtx = pulseCache.get(ctx)
+  if (!perCtx) {
+    perCtx = new Map()
+    pulseCache.set(ctx, perCtx)
+  }
+  const clamped = Math.min(0.95, Math.max(0.05, width))
+  const bucket = Math.round(clamped * 50) // 50 unique widths
+  const cached = perCtx.get(bucket)
+  if (cached) return cached
+  const w = bucket / 50
+  const wave = buildPulseWave(ctx, w)
+  perCtx.set(bucket, wave)
+  return wave
+}
+
+function buildPulseWave(ctx: AudioContext, width: number, harmonics = 64): PeriodicWave {
+  // Pulse Fourier series:
+  //   a_n (cosine) = (2 / (πn)) * sin(2πnw)
+  //   b_n (sine)   = (2 / (πn)) * (1 - cos(2πnw))
+  // w=0.5 collapses cosines to 0 and gives the classic odd-harmonic square.
+  const real = new Float32Array(harmonics)
+  const imag = new Float32Array(harmonics)
+  for (let n = 1; n < harmonics; n++) {
+    const angle = 2 * Math.PI * n * width
+    real[n] = (2 / (Math.PI * n)) * Math.sin(angle)
+    imag[n] = (2 / (Math.PI * n)) * (1 - Math.cos(angle))
+  }
+  return ctx.createPeriodicWave(real, imag, { disableNormalization: false })
+}
+
 /**
  * A single voice: up to 3 oscillators → mixer → filter → amp → output.
  * Filter and amp each have their own ADSR envelope.
@@ -93,14 +129,25 @@ export class Voice {
     patch.oscillators.forEach((osc, idx) => {
       if (!osc.enabled) return
       const node = ctx.createOscillator()
-      node.type = osc.waveform
+      if (osc.waveform === 'pulse') {
+        // Web Audio's OscillatorNode has no duty-cycle param, so build a
+        // PeriodicWave from the Fourier series of a pulse at the requested
+        // width. Cached at synth level so identical widths aren't rebuilt.
+        node.setPeriodicWave(getPulseWave(ctx, osc.pulseWidth))
+      } else {
+        node.type = osc.waveform
+      }
       node.frequency.value = baseFreq * Math.pow(2, osc.semitones / 12)
       node.detune.value = osc.detune
       const gain = ctx.createGain()
       gain.gain.value = osc.level * velGain
       node.connect(gain)
       gain.connect(this.mixer)
-      node.start(now)
+      // Phase reset OFF = organic analog character — each oscillator starts
+      // at a small random time offset so their relative phases (and therefore
+      // the beating between detuned stacks) differ on every note.
+      const oscStart = patch.phaseReset ? now : now + Math.random() * 0.012
+      node.start(oscStart)
       this.oscillators.push(node)
       this.oscSlotIndex.push(idx)
       this.oscGains.push(gain)
@@ -146,6 +193,10 @@ export class Voice {
     this.oscillators.forEach((osc, i) => {
       const slot = patch.oscillators[this.oscSlotIndex[i]]
       const target = baseFreq * Math.pow(2, slot.semitones / 12)
+      // If waveform or pulseWidth changed since this voice was built, swap
+      // the PeriodicWave in place so mono glides pick up the new sound.
+      if (slot.waveform === 'pulse') osc.setPeriodicWave(getPulseWave(this.ctx, slot.pulseWidth))
+      else if (osc.type !== slot.waveform) osc.type = slot.waveform
       osc.frequency.cancelScheduledValues(now)
       if (glideSec <= 0) {
         osc.frequency.setValueAtTime(target, now)
