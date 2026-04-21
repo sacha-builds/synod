@@ -844,48 +844,54 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <PresetBar
-      :presets="presetListItems"
-      :current-id="currentPresetId"
-      :display-name="presetDisplayName"
-      :is-dirty="isDirty"
-      @load="loadPreset"
-      @prev="prevPreset"
-      @next="nextPreset"
-      @save="savePreset"
-      @save-as="savePresetAs"
-      @rename="renamePreset"
-      @remove="deletePreset"
-      @export-preset="exportPreset"
-      @import-preset="importPreset"
-    />
-
-    <PerformanceBar :patch="patch" />
-
-    <RecordBar
-      :is-recording="isRecording"
-      :elapsed="recordElapsed"
-      @start="startRecording"
-      @stop="stopRecording"
-    />
-
-    <transition name="hint">
-      <div v-if="showSoundHint" class="sound-hint" role="status">
-        <span class="hint-icon">🔊</span>
-        <span class="hint-text">
-          <template v-if="isIOS">
-            No sound? Check the mute switch on the side of your iPhone, and your volume.
-          </template>
-          <template v-else>
-            No sound? Check your volume level.
-          </template>
-        </span>
-        <button class="hint-close" @click="dismissSoundHint" aria-label="Dismiss">×</button>
-      </div>
-    </transition>
-
     <div class="layout-wrap" :class="{ 'fade-up': canScrollUp, 'fade-down': canScrollDown }">
       <main class="layout" ref="layoutRef" @scroll="updateScroll">
+        <div class="preset-section">
+          <PresetBar
+            :presets="presetListItems"
+            :current-id="currentPresetId"
+            :display-name="presetDisplayName"
+            :is-dirty="isDirty"
+            @load="loadPreset"
+            @prev="prevPreset"
+            @next="nextPreset"
+            @save="savePreset"
+            @save-as="savePresetAs"
+            @rename="renamePreset"
+            @remove="deletePreset"
+            @export-preset="exportPreset"
+            @import-preset="importPreset"
+          />
+        </div>
+
+        <div class="perf-section">
+          <PerformanceBar :patch="patch" />
+        </div>
+
+        <div class="record-section">
+          <RecordBar
+            :is-recording="isRecording"
+            :elapsed="recordElapsed"
+            @start="startRecording"
+            @stop="stopRecording"
+          />
+        </div>
+
+        <transition name="hint">
+          <div v-if="showSoundHint" class="hint-section sound-hint" role="status">
+            <span class="hint-icon">🔊</span>
+            <span class="hint-text">
+              <template v-if="isIOS">
+                No sound? Check the mute switch on the side of your iPhone, and your volume.
+              </template>
+              <template v-else>
+                No sound? Check your volume level.
+              </template>
+            </span>
+            <button class="hint-close" @click="dismissSoundHint" aria-label="Dismiss">×</button>
+          </div>
+        </transition>
+
         <section class="randomize-section">
           <RandomizePanel :part="currentPart" :part-label="patch.activePart === 0 ? 'A' : 'B'" />
         </section>
@@ -1224,6 +1230,10 @@ onBeforeUnmount(() => {
 @media (max-width: 899px) {
   .layout {
     grid-template-areas:
+      'preset'
+      'perf'
+      'record'
+      'hint'
       'scope'
       'osc'
       'voice'
@@ -1241,6 +1251,10 @@ onBeforeUnmount(() => {
   .layout {
     grid-template-columns: 1.35fr 1fr;
     grid-template-areas:
+      'preset preset'
+      'perf   perf'
+      'record record'
+      'hint   hint'
       'osc    scope'
       'osc    voice'
       'ampenv filtenv'
@@ -1250,6 +1264,18 @@ onBeforeUnmount(() => {
       'fx     fx'
       'rand   rand';
   }
+}
+.preset-section {
+  grid-area: preset;
+}
+.perf-section {
+  grid-area: perf;
+}
+.record-section {
+  grid-area: record;
+}
+.hint-section {
+  grid-area: hint;
 }
 .randomize-section {
   grid-area: rand;

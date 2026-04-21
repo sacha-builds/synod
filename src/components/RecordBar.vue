@@ -107,8 +107,8 @@ function onClick() {
   gap: 14px;
   padding: 6px 12px;
   background: var(--bg-1);
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   flex-wrap: wrap;
 }
 
